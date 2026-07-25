@@ -146,6 +146,10 @@ TTL    Fqdn                                          Name     ProvisioningState 
 
 `httpbin` A 레코드 1건이 TTL 300으로 등록되어 있으면 정상입니다.
 
+등록된 레코드는 Azure Portal에서도 확인할 수 있습니다. **Public DNS zones → `$ZONE_NAME` → DNS Management → Recordsets**로 이동하면 기본 NS·SOA 레코드와 함께 `httpbin` A 레코드가 정적 IP 값으로 표시됩니다.
+
+![Azure Portal — DNS zone Recordsets 화면에서 httpbin A 레코드가 정적 IP로 등록된 모습](images/05-dns-zone-a-record-portal.png)
+
 > **참고** IP가 유동적인 클러스터에서 A 레코드를 자동 발행·갱신하고 싶다면 [5절 옵션 — ClusterExternalDNS](#5-옵션--clusterexternaldns로-a-레코드-자동-발행)를 참고하세요.
 
 ---
