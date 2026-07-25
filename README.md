@@ -100,40 +100,32 @@ AKS 노드 리소스 그룹(`MC_...`) 내부 리소스는 AKS가 자동 관리�
 
 ---
 
-## 트러블슈팅 색인
-
-자주 발생하는 문제를 빠르게 찾을 수 있도록 각 모듈의 대표 증상을 아래에 정리합니다.
-
-| 증상 | 모듈 |
-|------|------|
-| `az version` 결과가 2.86.0 미만 | [01 — 사전 준비](docs/01-prerequisites.md) |
-| Cloud Shell 시작 시 스토리지 계정 오류 | [01 — 사전 준비](docs/01-prerequisites.md) |
-| `az account show` 시 권한 오류 또는 빈 결과 | [01 — 사전 준비](docs/01-prerequisites.md) |
-| `--enable-app-routing-istio` unrecognized argument 오류 | [02 — 환경 준비](docs/02-environment-setup.md) |
-| `Operation results in exceeding quota of cores` 오류 | [02 — 환경 준비](docs/02-environment-setup.md) |
-| `istiod-*` 파드가 `Pending` 상태 | [02 — 환경 준비](docs/02-environment-setup.md) |
-| `EXTERNAL-IP`가 `<pending>` 상태로 계속 유지 | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
-| `kubectl wait` 명령이 타임아웃(`condition not met`) | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
-| `curl` 요청에서 404 반환 | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
-| 정적 IP 지정 후 `EXTERNAL-IP`가 `<pending>`으로 남음 | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
-| `az keyvault certificate create` 실행 시 `ForbiddenByRbac(403)` 오류 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
-| `az keyvault certificate create` 실행 시 `Public network access is disabled` 오류 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
-| `az ad signed-in-user show` 명령이 오류를 반환하거나 값이 비어 있음 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
-| TLS 인증서 미마운트·FIC 인증 실패 (`--subject` 오타) | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
-| `kv-gw-cert-*` Secret이 생성되지 않음 | [05 — TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) |
-| `SecretProviderClass`·`clusterexternaldns` CRD 자체가 없음 | [05 — TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) |
-| A 레코드가 자동 생성되지 않음 (ExternalDNS 옵션) | [05 — TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) |
-| `curl: (60) SSL certificate problem` 오류 | [05 — TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) |
-| `envsubst` 적용 후 YAML에 변수(`${CERT_URI}` 등)가 그대로 남음 | [05 — TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) |
-| RG 삭제가 10분 이상 걸림 | [06 — 정리](docs/06-cleanup.md) |
-| `az keyvault purge` 실행 시 권한 오류 발생 | [06 — 정리](docs/06-cleanup.md) |
-| 포털에서 `MC_` 노드 RG가 남아 있는 것처럼 보임 | [06 — 정리](docs/06-cleanup.md) |
-
----
-
 ## 참고 자료
 
-- [AKS Application Routing — Gateway API 사용](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api)
-- [AKS Application Routing — DNS·TLS 구성](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api-dns-tls)
+### AKS Application Routing·Gateway API (Microsoft Learn)
+
+- [AKS Application Routing — Gateway API 사용](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api) — 이 워크샵 03·05 모듈의 원본 문서
+- [AKS Application Routing — DNS·TLS 구성](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api-dns-tls) — 04·05 모듈의 원본 문서
+- [AKS Application Routing 애드온 개요](https://learn.microsoft.com/en-us/azure/aks/app-routing)
 - [AKS Managed Gateway API](https://learn.microsoft.com/en-us/azure/aks/managed-gateway-api)
+- [AKS에서 정적 IP로 Load Balancer 사용](https://learn.microsoft.com/en-us/azure/aks/static-ip) — 03 모듈 8절 배경
+
+### 자격 증명·인증서 (Microsoft Learn)
+
+- [AKS Workload Identity 개요](https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview) — 04 모듈 UAMI·FIC의 동작 원리
+- [Workload Identity Federation (Microsoft Entra)](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation)
+- [AKS Key Vault Secrets Store CSI Driver](https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-driver) — 05 모듈 인증서 동기화 메커니즘
+- [Key Vault 인증서 개요](https://learn.microsoft.com/en-us/azure/key-vault/certificates/about-certificates)
+- [Key Vault soft-delete 개요](https://learn.microsoft.com/en-us/azure/key-vault/general/soft-delete-overview) — 06 모듈 purge가 필요한 이유
+
+### DNS·네트워킹 (Microsoft Learn)
+
+- [Azure DNS zone과 레코드 개요](https://learn.microsoft.com/en-us/azure/dns/dns-zones-records)
+- [Azure 공인 IP 주소 (SKU·할당 방식)](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/public-ip-addresses)
+- [az aks CLI 레퍼런스](https://learn.microsoft.com/en-us/cli/azure/aks)
+
+### 오픈소스 공식 문서
+
 - [Gateway API 공식 문서](https://gateway-api.sigs.k8s.io/)
+- [ExternalDNS 공식 문서](https://kubernetes-sigs.github.io/external-dns/latest/) — 05 모듈 옵션의 upstream 프로젝트
+- [Istio httpbin 샘플](https://github.com/istio/istio/tree/master/samples/httpbin) — 03 모듈에서 배포하는 샘플 앱
