@@ -98,7 +98,7 @@ Gateway API는 역할에 따라 오브젝트를 분리합니다.
 | `Gateway` | 인프라 운영자 | 트래픽 수신 포트·프로토콜·TLS 정책을 선언 |
 | `HTTPRoute` | 애플리케이션 개발자 | 특정 Gateway에 연결할 URL 경로·헤더 기반 라우팅 규칙 정의 |
 
-> **참고** 2026년 3월 Kubernetes에서 Ingress NGINX 컨트롤러의 공식 유지보수가 종료되었습니다.
+> **참고** Kubernetes SIG Network과 Security Response Committee는 2025년 11월 [Ingress NGINX 프로젝트 은퇴를 공식 발표](https://www.kubernetes.dev/blog/2025/11/12/ingress-nginx-retirement/)했으며, 2026년 3월을 기점으로 유지보수가 종료되었습니다.
 > 커뮤니티는 Gateway API로의 전환을 권장하고 있으며, 주요 클라우드 공급자들도 Gateway API 기반 관리형 솔루션을 제공하기 시작했습니다.
 
 ### application routing 애드온의 Gateway API vs Istio 서비스 메시 애드온
