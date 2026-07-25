@@ -296,4 +296,4 @@ TTL    Fqdn                                          Name     ProvisioningState 
 
 ---
 
-[← 04 — DNS·TLS 인프라 준비](04-dns-tls-infra.md) | 다음: [06 — 정리](06-cleanup.md)
+[← 04 — DNS·TLS 인프라 준비](04-dns-tls-infra.md) | 다음: [06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) 또는 [07 — 정리](07-cleanup.md)

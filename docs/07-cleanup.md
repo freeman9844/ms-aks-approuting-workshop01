@@ -1,4 +1,4 @@
-# 06 — 정리
+# 07 — 정리
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
@@ -102,4 +102,4 @@ rm -f ~/.approuting-ws-env cert-policy.json
 
 ---
 
-[← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | [처음으로 (README)](../README.md)
+[← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) | [처음으로 (README)](../README.md)
