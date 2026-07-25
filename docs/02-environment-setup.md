@@ -172,6 +172,10 @@ istio-remote       istio.io/unmanaged-gateway               True       4m24s
 
 Gateway API CRD 6종(backendtlspolicies 포함)이 모두 확인되고, `istiod-*` 파드 2개가 `Running` 상태이며, `approuting-istio` GatewayClass가 `ACCEPTED: True`로 표시되면 환경 준비가 완료된 것입니다. `istio-remote` GatewayClass는 Istio가 기본 등록하는 클래스로 이 워크샵에서는 사용하지 않습니다.
 
+생성된 클러스터는 Azure Portal에서도 확인할 수 있습니다. **Kubernetes center → Clusters**로 이동하면 `$CLUSTER` 클러스터가 `Running` 상태로 표시됩니다.
+
+![Azure Portal — Kubernetes center Clusters 화면에서 aks-approuting 클러스터가 Running 상태로 표시된 모습](images/02-kubernetes-center-portal.png)
+
 ---
 
 ## 트러블슈팅
