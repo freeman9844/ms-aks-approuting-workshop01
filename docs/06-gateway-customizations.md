@@ -273,6 +273,51 @@ pod "curl-test" deleted from workshop namespace
 
 외부 요청은 타임아웃(`000`)되고, VNet 내부(파드)에서는 정상 응답(`200`)합니다. 게이트웨이가 내부 전용으로 전환된 것입니다.
 
+### 3.4 참고 — public Gateway와 private Gateway 병행 운영
+
+실 운영에서는 기존 public Gateway를 내부용으로 전환하는 대신, **별도의 private Gateway를 하나 더 두는** 구성이 일반적입니다. Gateway마다 독립적인 LoadBalancer Service·Deployment·HPA·PDB가 생성되므로(`<gateway 이름>-approuting-istio`) 두 Gateway는 서로 간섭하지 않으며, 같은 백엔드를 HTTPRoute의 `parentRefs`로 양쪽에 연결할 수도 있습니다.
+
+👁️ **예시** — public `httpbin-gateway` 옆에 추가하는 private Gateway (이 워크샵에서는 적용하지 않습니다)
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: internal-gateway
+  namespace: workshop
+spec:
+  gatewayClassName: approuting-istio
+  infrastructure:
+    annotations:
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: httpbin-internal
+  namespace: workshop
+spec:
+  parentRefs:
+  - name: internal-gateway
+  hostnames: ["httpbin.internal.example"]
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /get
+    backendRefs:
+    - name: httpbin
+      port: 8000
+```
+
+> **이 워크샵 클러스터에서 실습하지 않는 이유**: Gateway 하나당 파드 2개(HPA `minReplicas: 2`, 각 CPU 100m 요청)가 추가로 필요합니다. 이 워크샵의 2노드 클러스터는 CPU 요청량이 이미 거의 가득 차 있어(노드당 약 98–99%), 새 Gateway 파드가 `Insufficient cpu`로 `Pending`에 머물고 Gateway가 `PROGRAMMED: False` 상태로 남습니다. 기능의 제약이 아니라 노드 리소스의 제약이므로, 노드 수를 늘리거나 더 큰 VM SKU를 사용하면 정상 동작합니다.
+
 이것으로 모든 실습이 끝났습니다. [07 — 정리](07-cleanup.md)로 이동해 리소스를 삭제하세요.
 
 ---
