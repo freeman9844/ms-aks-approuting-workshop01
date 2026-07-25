@@ -104,7 +104,7 @@ Gateway API는 역할에 따라 오브젝트를 분리합니다.
 
 이 워크샵에서는 `--enable-app-routing`(애드온 operator)과 `--enable-app-routing-istio`(Istio 기반 Gateway API 구현) 두 플래그를 함께 사용하지만, Istio **서비스 메시** 애드온과 혼동하지 않는 것이 중요합니다.
 
-> **주의** `--enable-app-routing-istio`만으로는 애드온 operator(`webAppRouting.enabled`)가 켜지지 않습니다. operator가 없으면 04–05 모듈의 TLS 어노테이션 처리와 `ClusterExternalDNS`가 동작하지 않으므로, 반드시 `--enable-app-routing`을 함께 지정합니다.
+> **주의** `--enable-app-routing-istio`만으로는 애드온 operator(`webAppRouting.enabled`)가 켜지지 않습니다. operator가 없으면 04–05 모듈의 TLS 어노테이션 처리와 `ClusterExternalDNS`(05 모듈 옵션)가 동작하지 않으므로, 반드시 `--enable-app-routing`을 함께 지정합니다.
 
 | 항목 | application routing 애드온 (Gateway API 모드) | Istio 서비스 메시 애드온 |
 |------|-----------------------------------------------|------------------------|

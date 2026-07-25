@@ -115,7 +115,7 @@ User-Assigned Managed Identity(UAMI)를 생성하고 두 가지 Azure 역할을 
 
 > **참고(재실행 시)** 이 모듈의 `az role assignment create`·`az identity federated-credential create`는 동일 인자로 재실행하면 `already exists` 오류를 반환할 수 있습니다. 이미 생성된 상태라는 뜻이므로 무시하고 다음 단계로 진행하면 됩니다.
 
-- **DNS Zone Contributor** — `$ZONE_ID` 스코프: ExternalDNS가 A 레코드를 생성·삭제합니다.
+- **DNS Zone Contributor** — `$ZONE_ID` 스코프: ExternalDNS가 A 레코드를 생성·삭제합니다(05 모듈 5절 옵션에서 사용. 코어 경로의 수동 A 레코드 등록은 사용자 권한으로 수행되므로 이 역할이 없어도 되지만, 옵션 대비를 위해 함께 구성합니다).
 - **Key Vault Secrets User** — Key Vault 스코프: CSI 드라이버가 인증서 시크릿을 읽습니다.
 
 🟢 **실행**
@@ -241,4 +241,4 @@ operator가 Gateway 어노테이션을 감지하는 순간부터 HTTPS 리스너
 
 ---
 
-[← 03 — Gateway·HTTPRoute로 HTTP 노출](03-gateway-httproute.md) | 다음: [05 — TLS Gateway와 ClusterExternalDNS](05-tls-gateway-externaldns.md)
+[← 03 — Gateway·HTTPRoute로 HTTP 노출](03-gateway-httproute.md) | 다음: [05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md)

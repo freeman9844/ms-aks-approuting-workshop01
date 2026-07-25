@@ -21,10 +21,10 @@ source ~/.approuting-ws-env
 ## 1. 리소스 그룹 삭제
 
 이 워크샵에서 직접 생성한 모든 리소스는 단일 리소스 그룹 `$RESOURCE_GROUP`에 속해 있습니다.
-Azure DNS Zone과 ClusterExternalDNS가 생성한 A 레코드도 동일 RG에 있으므로, RG를 삭제하면 Zone과 함께 레코드가 함께 제거됩니다.
-AKS가 관리하는 노드 리소스 그룹(`MC_...`)과 그 안의 리소스(03 모듈 8절 옵션의 정적 공인 IP 포함)는 클러스터 삭제 시 자동으로 연쇄 삭제됩니다.
+Azure DNS Zone과 05 모듈에서 등록한 A 레코드(수동 또는 ExternalDNS 옵션의 자동 발행분)도 동일 RG에 있으므로, RG를 삭제하면 Zone과 함께 레코드가 함께 제거됩니다.
+AKS가 관리하는 노드 리소스 그룹(`MC_...`)과 그 안의 리소스(03 모듈 8절의 정적 공인 IP 포함)는 클러스터 삭제 시 자동으로 연쇄 삭제됩니다.
 
-> **참고**: ClusterExternalDNS 리소스 자체를 삭제해도 이미 생성된 DNS 레코드는 자동으로 삭제되지 않습니다. ExternalDNS는 자신이 관리하지 않는다고 판단한 레코드를 보존하는 보수적인 정책을 사용하기 때문입니다. RG 수준의 삭제가 레코드까지 완전히 제거하는 가장 확실한 방법입니다.
+> **참고**: (05 모듈 5절 옵션을 수행한 경우) ClusterExternalDNS 리소스 자체를 삭제해도 이미 생성된 DNS 레코드는 자동으로 삭제되지 않습니다. ExternalDNS는 자신이 관리하지 않는다고 판단한 레코드를 보존하는 보수적인 정책을 사용하기 때문입니다. RG 수준의 삭제가 레코드까지 완전히 제거하는 가장 확실한 방법입니다.
 
 🟢 **실행**
 ```bash
@@ -102,4 +102,4 @@ rm -f ~/.approuting-ws-env cert-policy.json
 
 ---
 
-[← 05 — TLS Gateway와 ClusterExternalDNS](05-tls-gateway-externaldns.md) | [처음으로 (README)](../README.md)
+[← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | [처음으로 (README)](../README.md)

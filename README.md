@@ -8,13 +8,14 @@ Azure Kubernetes Service(AKS)의 **Application Routing 애드온**과 **Gateway 
 
 ```mermaid
 flowchart LR
-  user([사용자]) -->|"HTTP → HTTPS"| gw["Gateway (approuting-istio)<br/>httpbin-gateway"]
+  user([사용자]) -->|"HTTP → HTTPS"| pip["정적 공인 IP"] --> gw["Gateway (approuting-istio)<br/>httpbin-gateway"]
   gw --> route[HTTPRoute] --> svc[httpbin Service]
   subgraph aks ["AKS Standard (Korea Central)"]
     gw; route; svc
-    edns[managed external-dns]
+    edns["managed external-dns<br/>(옵션)"]
   end
-  edns -.->|A 레코드 발행| zone[(Azure DNS zone)]
+  edns -.->|"A 레코드 자동 발행 (옵션)"| zone[(Azure DNS zone)]
+  pip -.->|A 레코드 수동 등록| zone
   gw -.->|인증서 동기화<br/>SecretProviderClass| kv[(Key Vault<br/>자체 서명 인증서)]
   uami[UAMI + 페더레이션<br/>자격 증명] -.-> edns
   uami -.-> gw
@@ -25,10 +26,10 @@ flowchart LR
 ## 학습 목표
 
 1. Managed Gateway API CRD·Application Routing Gateway API·Workload Identity·Key Vault CSI 기능을 켠 AKS 클러스터를 `az` CLI로 생성한다.
-2. Gateway와 HTTPRoute로 앱을 HTTP로 노출하고, 자동 생성되는 리소스(GatewayClass·LoadBalancer 서비스 등)의 동작을 이해한다.
+2. Gateway와 HTTPRoute로 앱을 HTTP로 노출하고, 자동 생성되는 리소스(GatewayClass·LoadBalancer 서비스 등)의 동작을 이해하며, `spec.addresses`로 Gateway 외부 IP를 정적 공인 IP로 고정한다.
 3. HTTPRoute의 `hostname`·`path` 매칭 동작을 직접 관찰한다.
 4. Azure DNS zone·Key Vault 인증서·UAMI·페더레이션 자격 증명(FIC)으로 operator 통합 인프라를 구성한다.
-5. Gateway annotation 기반 TLS 종료와 ClusterExternalDNS를 통한 A 레코드 자동 발행을 확인한다.
+5. Gateway annotation 기반 TLS 종료와 정적 IP 기반 A 레코드 등록을 확인한다. (옵션: ClusterExternalDNS를 통한 A 레코드 자동 발행)
 6. 실습에 사용한 모든 Azure 리소스를 완전히 정리한다.
 
 ---
@@ -50,9 +51,9 @@ flowchart LR
 |------|------|------|
 | 01 | [사전 준비](docs/01-prerequisites.md) | Cloud Shell 접속, 구독 선택, az CLI 버전 확인 |
 | 02 | [환경 준비](docs/02-environment-setup.md) | 리소스 그룹·AKS 클러스터 생성, 자격 증명 취득 |
-| 03 | [Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) | Gateway·HTTPRoute 매니페스트 적용, LB IP 확인 및 동작 검증 |
+| 03 | [Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) | Gateway·HTTPRoute 매니페스트 적용, LB IP 확인·동작 검증, 정적 공인 IP 고정 |
 | 04 | [DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) | DNS zone·Key Vault·UAMI·FIC 생성 및 RBAC 구성 |
-| 05 | [TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) | TLS Gateway 적용, ClusterExternalDNS로 A 레코드 자동 발행 |
+| 05 | [TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) | TLS Gateway 적용, 정적 IP로 A 레코드 등록 (옵션: ClusterExternalDNS 자동 발행) |
 | 06 | [정리](docs/06-cleanup.md) | 전체 Azure 리소스 삭제 |
 
 ---
@@ -63,9 +64,9 @@ flowchart LR
 |------|------|-----------|-------------|
 | 01 | 사전 준비 | 5–10분 | Cloud Shell 초기 로딩 |
 | 02 | 환경 준비 | 15–20분 (AKS 생성 대기 5–10분 포함) | AKS 클러스터 프로비저닝 |
-| 03 | Gateway·HTTPRoute로 HTTP 노출 | 10–15분 (LB IP 할당 대기 포함, 정적 IP 옵션 +5분) | Azure LB 프로비저닝 |
+| 03 | Gateway·HTTPRoute로 HTTP 노출 | 15–20분 (LB IP 할당·정적 IP 구성 대기 포함) | Azure LB 프로비저닝 |
 | 04 | DNS·TLS 인프라 준비 | 15–20분 (RBAC 전파 대기 포함) | RBAC 전파 지연 |
-| 05 | TLS Gateway와 ClusterExternalDNS | 15–20분 (인증서 동기화·A 레코드 생성 대기 포함) | Key Vault 동기화·DNS 전파 |
+| 05 | TLS Gateway와 DNS A 레코드 | 10–15분 (인증서 동기화 대기 포함, ExternalDNS 옵션 +10분) | Key Vault 동기화 |
 | 06 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
 | **합계** | | **≈ 1시간 10분–1시간 30분** | |
 
@@ -119,11 +120,11 @@ AKS 노드 리소스 그룹(`MC_...`) 내부 리소스는 AKS가 자동 관리�
 | `az keyvault certificate create` 실행 시 `Public network access is disabled` 오류 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
 | `az ad signed-in-user show` 명령이 오류를 반환하거나 값이 비어 있음 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
 | TLS 인증서 미마운트·FIC 인증 실패 (`--subject` 오타) | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
-| `kv-gw-cert-*` Secret이 생성되지 않음 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
-| `SecretProviderClass`·`clusterexternaldns` CRD 자체가 없음 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
-| A 레코드가 생성되지 않음 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
-| `curl: (60) SSL certificate problem` 오류 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
-| `envsubst` 적용 후 YAML에 변수(`${CERT_URI}` 등)가 그대로 남음 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
+| `kv-gw-cert-*` Secret이 생성되지 않음 | [05 — TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) |
+| `SecretProviderClass`·`clusterexternaldns` CRD 자체가 없음 | [05 — TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) |
+| A 레코드가 자동 생성되지 않음 (ExternalDNS 옵션) | [05 — TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) |
+| `curl: (60) SSL certificate problem` 오류 | [05 — TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) |
+| `envsubst` 적용 후 YAML에 변수(`${CERT_URI}` 등)가 그대로 남음 | [05 — TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) |
 | RG 삭제가 10분 이상 걸림 | [06 — 정리](docs/06-cleanup.md) |
 | `az keyvault purge` 실행 시 권한 오류 발생 | [06 — 정리](docs/06-cleanup.md) |
 | 포털에서 `MC_` 노드 RG가 남아 있는 것처럼 보임 | [06 — 정리](docs/06-cleanup.md) |

@@ -2,7 +2,7 @@
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
-예상 소요 시간: 10–15분 (LB IP 할당 대기 포함, 8절 옵션 수행 시 +5분)
+예상 소요 시간: 15–20분 (LB IP 할당·정적 IP 구성 대기 포함)
 
 ---
 
@@ -199,10 +199,11 @@ Host 불일치: 404
 
 ---
 
-## 8. 옵션 — Gateway 외부 IP 고정 (정적 공인 IP)
+## 8. Gateway 외부 IP 고정 (정적 공인 IP)
 
 기본 동작에서는 Azure Load Balancer가 **동적 공인 IP**를 할당하므로, Gateway를 삭제 후 재생성하면 IP가 바뀝니다.
-방화벽 허용 목록 등록이나 외부 DNS 수동 등록처럼 IP가 바뀌면 안 되는 환경에서는 **정적 공인 IP**를 만들어 Gateway에 고정할 수 있습니다.
+방화벽 허용 목록 등록이나 DNS 수동 등록처럼 IP가 바뀌면 안 되는 환경을 위해, 이 워크샵에서는 **정적 공인 IP**를 만들어 Gateway에 고정합니다.
+여기서 고정한 IP는 05 모듈에서 DNS A 레코드를 등록할 때 그대로 사용합니다.
 
 Gateway API 표준 필드인 `spec.addresses`에 IP를 선언하면, Istio 컨트롤러가 자동 생성하는 LoadBalancer Service에 해당 IP를 지정합니다.
 
@@ -286,8 +287,20 @@ httpbin-gateway-approuting-istio   LoadBalancer   10.0.100.97   20.196.222.78   
 이제 Gateway를 삭제하고 다시 만들어도 `spec.addresses`만 동일하게 선언하면 항상 같은 IP로 노출됩니다.
 
 > **주의** Gateway를 재생성하는 경우 `kubectl apply` 직후 patch를 다시 적용해야 합니다. `manifests/gateway-http.yaml`에는 `addresses`가 없으므로, patch 없이 재생성하면 동적 IP로 돌아갑니다. Gateway `status.addresses`가 일시적으로 이전 동적 IP를 표시하더라도 1분 내에 정적 IP로 수렴합니다.
->
-> **참고** 04–05 모듈(DNS·TLS)은 고정 IP 없이도 동작합니다. ExternalDNS가 Gateway의 현재 IP를 감지해 A 레코드를 자동 갱신하기 때문입니다. 반대로 이 옵션을 수행했다면 05 모듈에서 ExternalDNS 없이 [수동 A 레코드 경로(05 모듈 6절)](05-tls-gateway-externaldns.md#6-옵션--정적-ip--수동-a-레코드-externaldns-생략)를 선택할 수 있습니다.
+
+### 8.4 변수 저장
+
+05 모듈에서 A 레코드 등록에 사용할 수 있도록 정적 IP 변수를 환경 파일에 추가합니다.
+
+🟢 **실행**
+```bash
+cat >> ~/.approuting-ws-env <<EOF
+export NODE_RG=$NODE_RG
+export STATIC_IP=$STATIC_IP
+EOF
+```
+
+> **참고** 05 모듈에서는 이 정적 IP로 DNS A 레코드를 수동 등록합니다. IP가 고정이므로 레코드도 한 번만 등록하면 됩니다. IP가 유동적인 환경에서 A 레코드를 자동 갱신하고 싶다면 [ClusterExternalDNS 옵션(05 모듈 5절)](05-tls-gateway-externaldns.md#5-옵션--clusterexternaldns로-a-레코드-자동-발행)을 참고하세요.
 
 ---
 
