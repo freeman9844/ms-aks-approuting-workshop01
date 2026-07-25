@@ -1,0 +1,14 @@
+apiVersion: approuting.kubernetes.azure.com/v1alpha1
+kind: ClusterExternalDNS
+metadata:
+  name: workshop-cluster-dns
+spec:
+  resourceName: workshop-cluster-dns
+  resourceNamespace: ${APP_NAMESPACE}
+  dnsZoneResourceIDs:
+  - ${ZONE_ID}
+  resourceTypes:
+  - gateway
+  identity:
+    type: workloadIdentity
+    serviceAccount: ${SA_NAME}

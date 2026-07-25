@@ -244,6 +244,6 @@ operator가 Gateway 어노테이션을 감지하는 순간부터 HTTPS 리스너
 
 ---
 
-[← 03 — Gateway·HTTPRoute로 HTTP 노출](03-gateway-httproute.md) | 다음: [05 — HTTPS Gateway와 TLS 인증서 연동](05-https-tls-gateway.md)
+[← 03 — Gateway·HTTPRoute로 HTTP 노출](03-gateway-httproute.md) | 다음: [05 — TLS Gateway와 ClusterExternalDNS](05-tls-gateway-externaldns.md)
 
 <!-- TODO(rehearsal): 예상 출력 실측 검증 -->
