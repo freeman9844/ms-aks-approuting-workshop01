@@ -27,16 +27,55 @@ az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER --overwr
 ## 1. TLS Gateway 적용
 
 이 단계에서는 03 모듈에서 생성한 `httpbin-gateway`를 HTTPS 리스너가 추가된 버전으로 덮어씁니다.
-`manifests/gateway-tls.yaml`에는 두 개의 `tls.options` 키가 포함되어 있습니다.
+`manifests/gateway-tls.yaml`의 전체 내용은 다음과 같습니다. 기존 `http` 리스너에 `https` 리스너가 추가되고, HTTPRoute의 `hostnames`에 `httpbin.${ZONE_NAME}`이 더해진 형태입니다.
 
-👁️ **예시**
+👁️ **예시** — `manifests/gateway-tls.yaml` 전체
 ```yaml
-tls:
-  mode: Terminate
-  options:
-    kubernetes.azure.com/tls-cert-keyvault-uri: ${CERT_URI}
-    kubernetes.azure.com/tls-cert-service-account: ${SA_NAME}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: httpbin-gateway
+spec:
+  gatewayClassName: approuting-istio
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: Same
+  - name: https
+    hostname: httpbin.${ZONE_NAME}
+    port: 443
+    protocol: HTTPS
+    tls:
+      mode: Terminate
+      options:
+        kubernetes.azure.com/tls-cert-keyvault-uri: ${CERT_URI}
+        kubernetes.azure.com/tls-cert-service-account: ${SA_NAME}
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: httpbin
+spec:
+  parentRefs:
+  - name: httpbin-gateway
+  hostnames: ["httpbin.${ZONE_NAME}", "httpbin.example.com"]
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /get
+    backendRefs:
+    - name: httpbin
+      port: 8000
 ```
+
+핵심은 `https` 리스너의 두 `tls.options` 키입니다.
 
 - **`tls-cert-keyvault-uri`**: Application Routing operator가 Key Vault에서 인증서를 가져올 버전 없는(versionless) URI입니다. operator가 이 URI를 감지하면 `SecretProviderClass`를 자동 생성합니다.
 - **`tls-cert-service-account`**: 인증서를 읽을 때 사용할 Kubernetes ServiceAccount를 지정합니다. 이 SA는 04 모듈에서 생성하고 UAMI와 Federated Identity Credential로 연결한 SA(`$SA_NAME`)입니다.
