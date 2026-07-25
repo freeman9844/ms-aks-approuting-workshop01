@@ -106,6 +106,10 @@ echo "Cert URI: $CERT_URI"
 
 > **RBAC 전파 지연 → 403** `az keyvault certificate create` 실행 시 `ForbiddenByRbac` 오류가 발생하면 1–2분 후 동일 명령을 재시도합니다.
 
+생성된 인증서는 Azure Portal에서도 확인할 수 있습니다. **Key vaults → `$KV_NAME` → Objects → Certificates**로 이동하면 `approuting-ws-cert`가 `Completed`·`Enabled` 상태로 표시됩니다.
+
+![Azure Portal — Key Vault Certificates 화면에서 approuting-ws-cert가 Enabled 상태로 표시된 모습](images/04-keyvault-certificate-portal.png)
+
 ---
 
 ## 4. 관리형 ID(UAMI) 생성 및 역할 할당
