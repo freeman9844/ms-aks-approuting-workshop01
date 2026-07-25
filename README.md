@@ -61,15 +61,13 @@ flowchart LR
 
 | 모듈 | 제목 | 예상 시간 | 주 소요 요인 |
 |------|------|-----------|-------------|
-| 01 | 사전 준비 | ~10분 | Cloud Shell 초기 로딩 |
+| 01 | 사전 준비 | 5–10분 | Cloud Shell 초기 로딩 |
 | 02 | 환경 준비 | 15–20분 (AKS 생성 대기 5–10분 포함) | AKS 클러스터 프로비저닝 |
 | 03 | Gateway·HTTPRoute로 HTTP 노출 | 10–15분 (LB IP 할당 대기 포함, 정적 IP 옵션 +5분) | Azure LB 프로비저닝 |
 | 04 | DNS·TLS 인프라 준비 | 15–20분 (RBAC 전파 대기 포함) | RBAC 전파 지연 |
 | 05 | TLS Gateway와 ClusterExternalDNS | 15–20분 (인증서 동기화·A 레코드 생성 대기 포함) | Key Vault 동기화·DNS 전파 |
-| 06 | 정리 | ~5분 (삭제는 백그라운드 진행) | — |
+| 06 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
 | **합계** | | **≈ 1시간 10분–1시간 30분** | |
-
-*리허설 후 실측 보정 예정.*
 
 ---
 
@@ -88,6 +86,19 @@ flowchart LR
 
 ---
 
+## 태깅 범례
+
+모든 리소스는 워크샵 전용 리소스 그룹에 생성되며, RG에 다음 태그를 부여해 용도를 식별합니다.
+
+| 태그 | 값 | 목적 |
+|------|-----|------|
+| `workload` | `aks-approuting-workshop` | 워크샵 리소스 식별 |
+| `environment` | `workshop` | 임시 실습 환경임을 표시 (정리 대상) |
+
+AKS 노드 리소스 그룹(`MC_...`) 내부 리소스는 AKS가 자동 관리하므로 별도 태깅하지 않습니다.
+
+---
+
 ## 트러블슈팅 색인
 
 자주 발생하는 문제를 빠르게 찾을 수 있도록 각 모듈의 대표 증상을 아래에 정리합니다.
@@ -96,19 +107,26 @@ flowchart LR
 |------|------|
 | `az version` 결과가 2.86.0 미만 | [01 — 사전 준비](docs/01-prerequisites.md) |
 | Cloud Shell 시작 시 스토리지 계정 오류 | [01 — 사전 준비](docs/01-prerequisites.md) |
+| `az account show` 시 권한 오류 또는 빈 결과 | [01 — 사전 준비](docs/01-prerequisites.md) |
 | `--enable-app-routing-istio` unrecognized argument 오류 | [02 — 환경 준비](docs/02-environment-setup.md) |
 | `Operation results in exceeding quota of cores` 오류 | [02 — 환경 준비](docs/02-environment-setup.md) |
+| `istiod-*` 파드가 `Pending` 상태 | [02 — 환경 준비](docs/02-environment-setup.md) |
 | `EXTERNAL-IP`가 `<pending>` 상태로 계속 유지 | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
 | `kubectl wait` 명령이 타임아웃(`condition not met`) | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
+| `curl` 요청에서 404 반환 | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
 | 정적 IP 지정 후 `EXTERNAL-IP`가 `<pending>`으로 남음 | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
 | `az keyvault certificate create` 실행 시 `ForbiddenByRbac(403)` 오류 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
 | `az keyvault certificate create` 실행 시 `Public network access is disabled` 오류 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
 | `az ad signed-in-user show` 명령이 오류를 반환하거나 값이 비어 있음 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
+| TLS 인증서 미마운트·FIC 인증 실패 (`--subject` 오타) | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
 | `kv-gw-cert-*` Secret이 생성되지 않음 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
 | `SecretProviderClass`·`clusterexternaldns` CRD 자체가 없음 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
 | A 레코드가 생성되지 않음 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
+| `curl: (60) SSL certificate problem` 오류 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
+| `envsubst` 적용 후 YAML에 변수(`${CERT_URI}` 등)가 그대로 남음 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
 | RG 삭제가 10분 이상 걸림 | [06 — 정리](docs/06-cleanup.md) |
 | `az keyvault purge` 실행 시 권한 오류 발생 | [06 — 정리](docs/06-cleanup.md) |
+| 포털에서 `MC_` 노드 RG가 남아 있는 것처럼 보임 | [06 — 정리](docs/06-cleanup.md) |
 
 ---
 

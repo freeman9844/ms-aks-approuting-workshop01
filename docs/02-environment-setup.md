@@ -23,7 +23,8 @@ echo "RESOURCE_GROUP=$RESOURCE_GROUP"
 
 🟢 **실행**
 ```bash
-az group create --name $RESOURCE_GROUP --location $LOCATION -o table
+az group create --name $RESOURCE_GROUP --location $LOCATION \
+  --tags workload=aks-approuting-workshop environment=workshop -o table
 ```
 
 📋 **예상 출력**

@@ -2,7 +2,7 @@
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
-예상 소요 시간: ~5분 (삭제는 백그라운드 진행)
+예상 소요 시간: 5–10분 (RG 삭제 완료 대기 포함)
 
 ---
 
@@ -20,8 +20,9 @@ source ~/.approuting-ws-env
 
 ## 1. 리소스 그룹 삭제
 
-이 워크샵에서 생성한 모든 리소스는 단일 리소스 그룹 `$RESOURCE_GROUP`에 속해 있습니다.
+이 워크샵에서 직접 생성한 모든 리소스는 단일 리소스 그룹 `$RESOURCE_GROUP`에 속해 있습니다.
 Azure DNS Zone과 ClusterExternalDNS가 생성한 A 레코드도 동일 RG에 있으므로, RG를 삭제하면 Zone과 함께 레코드가 함께 제거됩니다.
+AKS가 관리하는 노드 리소스 그룹(`MC_...`)과 그 안의 리소스(03 모듈 8절 옵션의 정적 공인 IP 포함)는 클러스터 삭제 시 자동으로 연쇄 삭제됩니다.
 
 > **참고**: ClusterExternalDNS 리소스 자체를 삭제해도 이미 생성된 DNS 레코드는 자동으로 삭제되지 않습니다. ExternalDNS는 자신이 관리하지 않는다고 판단한 레코드를 보존하는 보수적인 정책을 사용하기 때문입니다. RG 수준의 삭제가 레코드까지 완전히 제거하는 가장 확실한 방법입니다.
 
@@ -38,39 +39,14 @@ Deleting
 
 ---
 
-## 2. Key Vault soft-delete 정리
+## 2. RG 삭제 완료 대기
 
-Azure Key Vault는 기본적으로 soft-delete가 활성화되어 있습니다. RG를 삭제해도 Key Vault는 90일간 삭제된(soft-deleted) 상태로 보존되며, 동일한 이름으로 새 Key Vault를 생성하려면 purge(완전 삭제)가 필요합니다.
-
-RG 삭제가 완전히 완료된 뒤 다음 명령으로 purge를 수행합니다. 삭제가 아직 진행 중이라면 오류 메시지가 출력되며, 잠시 후 다시 시도하면 됩니다.
-
-🟢 **실행**
-```bash
-az keyvault purge --name $KV_NAME --no-wait 2>/dev/null || echo "삭제 완료 후 다시 시도하세요"
-```
-
----
-
-## 3. 로컬 흔적 정리
-
-Cloud Shell 환경 파일과 kubectl 컨텍스트를 정리합니다.
+Key Vault purge는 Vault 삭제가 끝난 뒤에만 가능하므로, RG 삭제 완료를 먼저 확인합니다.
+AKS 노드 리소스 그룹 연쇄 삭제로 5–10분가량 걸립니다. `false`가 출력되면 삭제가 완료된 것입니다.
 
 🟢 **실행**
 ```bash
-rm -f ~/.approuting-ws-env cert-policy.json
-kubectl config delete-context $CLUSTER 2>/dev/null || true
-```
-
----
-
-## 4. 과금 종료 확인
-
-리소스 그룹 삭제가 완료되면 과금이 중단됩니다. 단, Azure 포털의 비용 분석 화면에는 수 시간의 반영 지연이 있을 수 있습니다.
-
-RG 삭제 완료 여부는 다음 명령으로 확인합니다. `false`가 출력되면 삭제가 완료된 것입니다.
-
-🟢 **실행**
-```bash
+while [ "$(az group exists --name $RESOURCE_GROUP)" = "true" ]; do echo "삭제 진행 중... 30초 후 재확인"; sleep 30; done
 az group exists --name $RESOURCE_GROUP
 ```
 
@@ -78,6 +54,41 @@ az group exists --name $RESOURCE_GROUP
 ```
 false
 ```
+
+> ⏳ 대기하는 동안 이 모듈의 3단계 이후 내용을 미리 읽어두세요.
+
+---
+
+## 3. Key Vault soft-delete 정리
+
+Azure Key Vault는 기본적으로 soft-delete가 활성화되어 있습니다. RG를 삭제해도 Key Vault는 90일간 삭제된(soft-deleted) 상태로 보존되며, 동일한 이름으로 새 Key Vault를 생성하려면 purge(완전 삭제)가 필요합니다.
+
+🟢 **실행**
+```bash
+az keyvault purge --name $KV_NAME --no-wait
+az keyvault list-deleted --query "[?name=='$KV_NAME'].name" -o tsv
+```
+
+purge가 접수되면 두 번째 명령의 출력이 비어 있거나, 잠시 후 재실행 시 비게 됩니다.
+
+---
+
+## 4. 로컬 흔적 정리
+
+purge까지 접수된 것을 확인한 뒤 Cloud Shell 환경 파일과 kubectl 컨텍스트를 정리합니다.
+(`~/.approuting-ws-env`를 먼저 지우면 purge에 필요한 `$KV_NAME`을 잃게 되므로 반드시 마지막에 수행합니다.)
+
+🟢 **실행**
+```bash
+kubectl config delete-context $CLUSTER 2>/dev/null || true
+rm -f ~/.approuting-ws-env cert-policy.json
+```
+
+---
+
+## 5. 과금 종료 확인
+
+리소스 그룹 삭제가 완료된 시점(2단계)부터 과금이 중단됩니다. 단, Azure 포털의 비용 분석 화면에는 수 시간의 반영 지연이 있을 수 있습니다.
 
 ---
 

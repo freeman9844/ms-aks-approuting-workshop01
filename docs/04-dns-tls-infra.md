@@ -113,6 +113,8 @@ echo "Cert URI: $CERT_URI"
 Application Routing operator가 DNS 레코드를 쓰고 Key Vault 시크릿을 읽을 수 있도록,
 User-Assigned Managed Identity(UAMI)를 생성하고 두 가지 Azure 역할을 할당합니다.
 
+> **참고(재실행 시)** 이 모듈의 `az role assignment create`·`az identity federated-credential create`는 동일 인자로 재실행하면 `already exists` 오류를 반환할 수 있습니다. 이미 생성된 상태라는 뜻이므로 무시하고 다음 단계로 진행하면 됩니다.
+
 - **DNS Zone Contributor** — `$ZONE_ID` 스코프: ExternalDNS가 A 레코드를 생성·삭제합니다.
 - **Key Vault Secrets User** — Key Vault 스코프: CSI 드라이버가 인증서 시크릿을 읽습니다.
 
@@ -176,6 +178,7 @@ EOF
 ## 6. 파생 변수 저장
 
 Task 5(05 모듈)에서 복원할 수 있도록 이 단계에서 생성한 세 변수를 환경 파일에 추가합니다.
+(재실행으로 같은 줄이 중복 추가되어도 `source` 시 마지막 값이 적용되므로 동작에는 문제가 없습니다.)
 
 🟢 **실행**
 ```bash
