@@ -172,6 +172,46 @@ kubectl get events -n workshop \
   -o jsonpath='{.items[-1].message}' | tail -c 300; echo
 ```
 
+👁️ **예시** — patch 적용 후 Gateway 전체 YAML은 다음과 같습니다 (05 모듈의 `gateway-tls.yaml`에 `infrastructure.annotations`가 추가된 형태 — `spec.addresses`의 공인 IP와 2절의 `parametersRef`는 그대로).
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: httpbin-gateway
+  namespace: workshop
+spec:
+  gatewayClassName: approuting-istio
+  addresses:
+  - type: IPAddress
+    value: 20.196.222.78   # 03 모듈에서 고정한 정적 공인 IP
+  infrastructure:
+    annotations:
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"   # 이번에 추가된 어노테이션
+    parametersRef:          # 2절에서 추가한 Gateway별 커스터마이징
+      group: ""
+      kind: ConfigMap
+      name: gw-options
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: Same
+  - name: https
+    hostname: httpbin.${ZONE_NAME}
+    port: 443
+    protocol: HTTPS
+    tls:
+      mode: Terminate
+      options:
+        kubernetes.azure.com/tls-cert-keyvault-uri: ${CERT_URI}
+        kubernetes.azure.com/tls-cert-service-account: ${SA_NAME}
+    allowedRoutes:
+      namespaces:
+        from: Same
+```
+
 📋 **예상 출력**
 ```
 {
