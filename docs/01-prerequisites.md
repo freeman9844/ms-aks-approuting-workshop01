@@ -22,7 +22,7 @@ az account show --query '{name:name, id:id}' -o table
 
 ## 2. az CLI 버전 확인
 
-이 워크샵은 `--enable-app-routing` 및 Gateway API 관련 플래그를 사용합니다. az CLI **2.86.0 이상**이 필요합니다.
+이 워크샵은 `--enable-gateway-api`, `--enable-app-routing-istio` 플래그를 사용합니다. az CLI **2.86.0 이상**이 필요합니다.
 
 🟢 **실행**
 ```bash
@@ -92,7 +92,7 @@ echo "SUFFIX=$SUFFIX 저장 완료"
 
 > **참고** `KV_NAME=kv-apr-$SUFFIX`는 접두사 7자 + 5자리 SUFFIX = 최대 12자로, Key Vault 이름 24자 제한 및 전역 고유 요건을 만족합니다.
 >
-> **참고** `ZONE_NAME`은 실제 DNS에 등록하지 않는 **가상 도메인**입니다. 검증은 Azure Private DNS Zone의 네임서버 직접 질의 방식을 사용하므로 외부 도메인 위임이 필요 없습니다.
+> **참고** `ZONE_NAME`은 실제 DNS에 등록하지 않는 **가상 도메인**입니다. 검증은 Azure DNS 퍼블릭 존의 권한(authoritative) 네임서버 직접 질의 방식을 사용하므로 외부 도메인 위임이 필요 없습니다.
 
 ---
 
