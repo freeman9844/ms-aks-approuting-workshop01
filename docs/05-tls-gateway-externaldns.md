@@ -160,9 +160,16 @@ TTL    Fqdn                                          Name     ProvisioningState 
 
 🟢 **실행**
 ```bash
+# 1) DNS 존의 권한 네임서버(첫 번째) 주소를 조회합니다 (끝의 마침표 제거)
 NS=$(az network dns zone show --resource-group $RESOURCE_GROUP --name $ZONE_NAME --query 'nameServers[0]' -o tsv | sed 's/\.$//')
+
+# 2) 권한 네임서버에 직접 질의해 httpbin A 레코드의 IP를 확인합니다 (위임 없는 가상 도메인이므로 @NS 필수)
 GATEWAY_IP=$(dig +short @${NS} httpbin.${ZONE_NAME} | tail -1)
+
+# 3) 조회된 값을 확인합니다 — IP는 03 모듈에서 고정한 정적 IP와 같아야 합니다
 echo "NS=$NS / IP=$GATEWAY_IP"
+
+# 4) --resolve로 호스트명을 해당 IP에 강제 연결해 HTTPS 요청을 보냅니다 (-k: 자체 서명 인증서 검증 생략)
 curl -k -I --resolve "httpbin.${ZONE_NAME}:443:${GATEWAY_IP}" "https://httpbin.${ZONE_NAME}/get"
 ```
 
