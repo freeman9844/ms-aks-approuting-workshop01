@@ -2,7 +2,7 @@
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
-예상 소요 시간: 10–15분 (LB IP 할당 대기 포함)
+예상 소요 시간: 10–15분 (LB IP 할당 대기 포함, 8절 옵션 수행 시 +5분)
 
 ---
 
@@ -199,6 +199,87 @@ Host 불일치: 404
 
 ---
 
+## 8. 옵션 — Gateway 외부 IP 고정 (정적 공인 IP)
+
+기본 동작에서는 Azure Load Balancer가 **동적 공인 IP**를 할당하므로, Gateway를 삭제 후 재생성하면 IP가 바뀝니다.
+방화벽 허용 목록 등록이나 외부 DNS 수동 등록처럼 IP가 바뀌면 안 되는 환경에서는 **정적 공인 IP**를 만들어 Gateway에 고정할 수 있습니다.
+
+Gateway API 표준 필드인 `spec.addresses`에 IP를 선언하면, Istio 컨트롤러가 자동 생성하는 LoadBalancer Service에 해당 IP를 지정합니다.
+
+### 8.1 노드 리소스 그룹에 정적 공인 IP 생성
+
+AKS가 관리하는 **노드 리소스 그룹**(`MC_...`)에 IP를 생성합니다. 클러스터의 kubelet identity가 이 RG에 이미 네트워크 권한을 갖고 있어 별도 역할 할당이 필요 없고, 클러스터 삭제 시 IP도 함께 정리됩니다.
+
+🟢 **실행**
+```bash
+export NODE_RG=$(az aks show --resource-group $RESOURCE_GROUP --name $CLUSTER --query nodeResourceGroup -o tsv)
+az network public-ip create \
+  --resource-group $NODE_RG \
+  --name pip-httpbin-gateway \
+  --sku Standard \
+  --allocation-method Static \
+  --location $LOCATION \
+  --query 'publicIp.ipAddress' -o tsv
+export STATIC_IP=$(az network public-ip show --resource-group $NODE_RG --name pip-httpbin-gateway --query ipAddress -o tsv)
+echo "STATIC_IP=$STATIC_IP"
+```
+
+📋 **예상 출력**
+```
+20.196.222.78
+STATIC_IP=20.196.222.78
+```
+
+> **참고** 실 운영에서 IP를 클러스터 수명과 분리하려면 별도 RG에 IP를 만들고, 그 RG에 대해 클러스터 identity에 `Network Contributor` 역할을 할당해야 합니다. 이 워크샵에서는 정리 단순화를 위해 노드 RG를 사용합니다.
+
+### 8.2 Gateway에 `spec.addresses` 지정
+
+기존 Gateway를 patch하여 정적 IP를 선언합니다.
+
+🟢 **실행**
+```bash
+kubectl patch gateway httpbin-gateway -n $APP_NAMESPACE --type merge \
+  -p "{\"spec\":{\"addresses\":[{\"type\":\"IPAddress\",\"value\":\"$STATIC_IP\"}]}}"
+kubectl wait -n $APP_NAMESPACE --for=condition=programmed gateway httpbin-gateway --timeout=300s
+```
+
+👁️ **예시** — 매니페스트로 처음부터 선언하는 경우 `spec`에 다음 필드를 추가합니다.
+```yaml
+spec:
+  gatewayClassName: approuting-istio
+  addresses:
+  - type: IPAddress
+    value: 20.196.222.78   # 미리 생성한 정적 공인 IP
+```
+
+### 8.3 고정 IP 확인
+
+Service의 `EXTERNAL-IP`와 Gateway 상태 주소가 모두 정적 IP로 교체되고, 동일하게 200이 반환되는지 확인합니다.
+Load Balancer 프런트엔드 재구성에 최대 1–2분이 걸릴 수 있습니다.
+
+🟢 **실행**
+```bash
+kubectl get service httpbin-gateway-approuting-istio -n $APP_NAMESPACE
+kubectl get gateway httpbin-gateway -n $APP_NAMESPACE -ojsonpath='{.status.addresses[0].value}'; echo
+curl -s -o /dev/null -w "고정 IP 응답: %{http_code}\n" -HHost:httpbin.example.com "http://$STATIC_IP/get"
+```
+
+📋 **예상 출력**
+```
+NAME                               TYPE           CLUSTER-IP    EXTERNAL-IP     PORT(S)                        AGE
+httpbin-gateway-approuting-istio   LoadBalancer   10.0.100.97   20.196.222.78   15021:30286/TCP,80:30498/TCP   85s
+20.196.222.78
+고정 IP 응답: 200
+```
+
+이제 Gateway를 삭제하고 다시 만들어도 `spec.addresses`만 동일하게 선언하면 항상 같은 IP로 노출됩니다.
+
+> **주의** Gateway를 재생성하는 경우 `kubectl apply` 직후 patch를 다시 적용해야 합니다. `manifests/gateway-http.yaml`에는 `addresses`가 없으므로, patch 없이 재생성하면 동적 IP로 돌아갑니다. Gateway `status.addresses`가 일시적으로 이전 동적 IP를 표시하더라도 1분 내에 정적 IP로 수렴합니다.
+>
+> **참고** 04–05 모듈(DNS·TLS)은 고정 IP 없이도 동작합니다. ExternalDNS가 Gateway의 현재 IP를 감지해 A 레코드를 자동 갱신하기 때문입니다. 이 옵션은 DNS 자동화 없이 IP 자체를 고정해야 하는 시나리오를 위한 것입니다.
+
+---
+
 ## 트러블슈팅
 
 | 증상 | 원인 | 해결 방법 |
@@ -206,6 +287,7 @@ Host 불일치: 404
 | `EXTERNAL-IP`가 `<pending>` 상태로 계속 유지 | Azure Load Balancer 프로비저닝 지연 또는 구독 할당량 부족 | `kubectl describe gateway httpbin-gateway -n $APP_NAMESPACE`로 이벤트를 확인합니다. 수 분 후에도 해결되지 않으면 구독의 공용 IP 할당량을 확인합니다 |
 | `kubectl wait` 명령이 타임아웃(`condition not met`) | `gatewayClassName` 오타 또는 application routing 애드온 비활성화 | `kubectl get gateway httpbin-gateway -n $APP_NAMESPACE -o yaml`로 `spec.gatewayClassName` 값이 `approuting-istio`인지 확인합니다. 오타가 있으면 매니페스트를 수정하고 다시 적용합니다 |
 | `curl` 요청에서 404 반환 | `Host` 헤더 누락 또는 HTTPRoute `hostnames` 불일치 | `-HHost:httpbin.example.com` 옵션을 추가했는지 확인합니다. `kubectl get httproute httpbin -n $APP_NAMESPACE -o yaml`로 `spec.hostnames` 값이 정확한지 검토합니다 |
+| (8절) `spec.addresses` 지정 후 `EXTERNAL-IP`가 `<pending>`으로 남음 | 정적 IP의 SKU가 `Basic`이거나, IP가 노드 RG 외부에 있어 클러스터 identity에 권한이 없음 | `az network public-ip show --resource-group $NODE_RG --name pip-httpbin-gateway --query sku.name -o tsv`로 `Standard`인지 확인합니다. 노드 RG 외부의 IP라면 해당 RG에 클러스터 identity의 `Network Contributor` 역할을 할당하고 `kubectl describe svc httpbin-gateway-approuting-istio -n $APP_NAMESPACE` 이벤트를 확인합니다 |
 
 ---
 

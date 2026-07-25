@@ -63,7 +63,7 @@ flowchart LR
 |------|------|-----------|-------------|
 | 01 | 사전 준비 | ~10분 | Cloud Shell 초기 로딩 |
 | 02 | 환경 준비 | 15–20분 (AKS 생성 대기 5–10분 포함) | AKS 클러스터 프로비저닝 |
-| 03 | Gateway·HTTPRoute로 HTTP 노출 | 10–15분 (LB IP 할당 대기 포함) | Azure LB 프로비저닝 |
+| 03 | Gateway·HTTPRoute로 HTTP 노출 | 10–15분 (LB IP 할당 대기 포함, 정적 IP 옵션 +5분) | Azure LB 프로비저닝 |
 | 04 | DNS·TLS 인프라 준비 | 15–20분 (RBAC 전파 대기 포함) | RBAC 전파 지연 |
 | 05 | TLS Gateway와 ClusterExternalDNS | 15–20분 (인증서 동기화·A 레코드 생성 대기 포함) | Key Vault 동기화·DNS 전파 |
 | 06 | 정리 | ~5분 (삭제는 백그라운드 진행) | — |
@@ -100,6 +100,7 @@ flowchart LR
 | `Operation results in exceeding quota of cores` 오류 | [02 — 환경 준비](docs/02-environment-setup.md) |
 | `EXTERNAL-IP`가 `<pending>` 상태로 계속 유지 | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
 | `kubectl wait` 명령이 타임아웃(`condition not met`) | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
+| 정적 IP 지정 후 `EXTERNAL-IP`가 `<pending>`으로 남음 | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
 | `az keyvault certificate create` 실행 시 `ForbiddenByRbac(403)` 오류 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
 | `az keyvault certificate create` 실행 시 `Public network access is disabled` 오류 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
 | `az ad signed-in-user show` 명령이 오류를 반환하거나 값이 비어 있음 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
