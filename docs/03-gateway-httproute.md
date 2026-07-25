@@ -243,13 +243,24 @@ kubectl patch gateway httpbin-gateway -n $APP_NAMESPACE --type merge \
 kubectl wait -n $APP_NAMESPACE --for=condition=programmed gateway httpbin-gateway --timeout=300s
 ```
 
-👁️ **예시** — 매니페스트로 처음부터 선언하는 경우 `spec`에 다음 필드를 추가합니다.
+👁️ **예시** — 매니페스트로 처음부터 선언하는 경우 Gateway 전체 YAML은 다음과 같습니다 (`manifests/gateway-http.yaml`의 Gateway에 `addresses` 필드만 추가된 형태).
 ```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: httpbin-gateway
 spec:
   gatewayClassName: approuting-istio
   addresses:
   - type: IPAddress
     value: 20.196.222.78   # 미리 생성한 정적 공인 IP
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: Same
 ```
 
 ### 8.3 고정 IP 확인
