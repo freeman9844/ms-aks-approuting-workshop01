@@ -81,6 +81,8 @@ operator는 인증서 동기화를 담당하는 같은 이름의 Deployment(`kv-
 
 ## 3. ClusterExternalDNS 적용
 
+> **옵션** 03 모듈 8절에서 Gateway에 **정적 공인 IP**를 고정했다면, 3–4단계 대신 [6절 옵션 경로](#6-옵션--정적-ip--수동-a-레코드-externaldns-생략)로 A 레코드를 수동 등록해도 됩니다. IP가 바뀌지 않으므로 DNS 자동화 없이 레코드 1건이면 충분합니다.
+
 `ClusterExternalDNS`는 Application Routing 애드온이 관리하는 ExternalDNS 인스턴스를 클러스터 수준에서 선언하는 리소스입니다.
 
 👁️ **예시**
@@ -171,6 +173,49 @@ server: istio-envoy
 > - **`-k` 플래그가 필요한 이유**: 04 모듈에서 생성한 인증서는 Key Vault 자체 서명(Self-signed) 인증서입니다. 신뢰할 수 있는 CA가 서명하지 않았으므로 curl의 기본 인증서 체인 검증이 실패합니다. `-k`(또는 `--insecure`)는 이 검증을 건너뜁니다. CA 서명 인증서를 사용하는 실 운영 환경에서는 `-k` 대신 `--cacert <ca.crt>`로 루트 CA를 명시해 체인을 검증합니다.
 >
 > - **`--resolve` — 로컬 DNS를 우회하는 테스트 기법**: `--resolve <host>:<port>:<ip>` 옵션은 DNS 조회 없이 특정 호스트를 지정한 IP로 강제 연결합니다. 로컬 리졸버에 레코드가 전파되기 전이나 위임이 없는 환경에서 실제 TLS 핸드셰이크와 HTTP 응답까지 검증하는 데 유용합니다.
+
+---
+
+## 6. 옵션 — 정적 IP + 수동 A 레코드 (ExternalDNS 생략)
+
+> **전제** 03 모듈 8절(정적 공인 IP 옵션)을 수행한 경우에만 해당합니다. 이 경로는 **3–4단계를 대체**합니다. 1–2단계(TLS Gateway·인증서 동기화)는 IP와 무관하므로 그대로 수행해야 합니다.
+
+Gateway IP가 고정이면 DNS 레코드가 바뀔 일이 없으므로, ExternalDNS 없이 A 레코드를 한 번만 수동 등록하면 됩니다.
+`ClusterExternalDNS` 리소스·managed ExternalDNS 파드·레코드 생성 대기가 모두 불필요해지고, 클러스터를 재생성해도(같은 IP를 다시 고정하는 한) 레코드를 건드릴 필요가 없습니다.
+
+🟢 **실행**
+```bash
+export NODE_RG=$(az aks show --resource-group $RESOURCE_GROUP --name $CLUSTER --query nodeResourceGroup -o tsv)
+export STATIC_IP=$(az network public-ip show --resource-group $NODE_RG --name pip-httpbin-gateway --query ipAddress -o tsv)
+az network dns record-set a add-record \
+  --resource-group $RESOURCE_GROUP \
+  --zone-name $ZONE_NAME \
+  --record-set-name httpbin \
+  --ipv4-address $STATIC_IP \
+  --ttl 300 --query fqdn -o tsv
+az network dns record-set a list --resource-group $RESOURCE_GROUP --zone-name $ZONE_NAME -o table
+```
+
+📋 **예상 출력**
+```
+httpbin.ws15441.approuting-workshop.example.
+TTL    Fqdn                                          Name     ProvisioningState    ResourceGroup
+-----  --------------------------------------------  -------  -------------------  ----------------------
+300    httpbin.ws15441.approuting-workshop.example.  httpbin  Succeeded            rg-approuting-ws-15441
+```
+
+레코드가 등록되면 [5단계 End-to-End HTTPS 검증](#5-end-to-end-https-검증)을 동일하게 수행합니다. 06 모듈의 정리 절차도 변경 없이 그대로 적용됩니다(레코드는 RG 삭제 시 함께 제거).
+
+> **📚 교육 포인트 — 두 패턴 비교**
+>
+> | | ClusterExternalDNS (3–4단계) | 정적 IP + 수동 A 레코드 (이 옵션) |
+> |---|---|---|
+> | DNS 갱신 | Gateway IP 변경을 자동 추적 | 불필요 (IP가 고정) |
+> | 구성 요소 | ClusterExternalDNS + managed 파드 | 정적 공인 IP 1개 |
+> | 호스트 추가 시 | HTTPRoute만 추가하면 자동 등록 | 레코드를 수동으로 추가 |
+> | 어울리는 환경 | 호스트가 많거나 IP가 유동적인 클러스터 | 방화벽 허용 목록 등 IP 고정이 전제인 환경 |
+>
+> ExternalDNS는 자동화·다중 호스트에, 정적 IP는 프런트엔드 주소가 계약된 운영 환경에 적합합니다. 두 방식은 함께 써도 됩니다 — ExternalDNS는 정적 IP도 그대로 레코드에 반영합니다.
 
 ---
 

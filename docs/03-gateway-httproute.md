@@ -276,7 +276,7 @@ httpbin-gateway-approuting-istio   LoadBalancer   10.0.100.97   20.196.222.78   
 
 > **주의** Gateway를 재생성하는 경우 `kubectl apply` 직후 patch를 다시 적용해야 합니다. `manifests/gateway-http.yaml`에는 `addresses`가 없으므로, patch 없이 재생성하면 동적 IP로 돌아갑니다. Gateway `status.addresses`가 일시적으로 이전 동적 IP를 표시하더라도 1분 내에 정적 IP로 수렴합니다.
 >
-> **참고** 04–05 모듈(DNS·TLS)은 고정 IP 없이도 동작합니다. ExternalDNS가 Gateway의 현재 IP를 감지해 A 레코드를 자동 갱신하기 때문입니다. 이 옵션은 DNS 자동화 없이 IP 자체를 고정해야 하는 시나리오를 위한 것입니다.
+> **참고** 04–05 모듈(DNS·TLS)은 고정 IP 없이도 동작합니다. ExternalDNS가 Gateway의 현재 IP를 감지해 A 레코드를 자동 갱신하기 때문입니다. 반대로 이 옵션을 수행했다면 05 모듈에서 ExternalDNS 없이 [수동 A 레코드 경로(05 모듈 6절)](05-tls-gateway-externaldns.md#6-옵션--정적-ip--수동-a-레코드-externaldns-생략)를 선택할 수 있습니다.
 
 ---
 
