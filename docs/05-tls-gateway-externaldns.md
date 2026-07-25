@@ -181,6 +181,6 @@ server: istio-envoy
 
 ---
 
-[← 04 — DNS·TLS 인프라 준비](04-dns-tls-infra.md) | 다음: [06 — 다음 모듈](06-next.md)
+[← 04 — DNS·TLS 인프라 준비](04-dns-tls-infra.md) | 다음: [06 — 정리](06-cleanup.md)
 
 <!-- TODO(rehearsal): 예상 출력 실측 검증 -->
