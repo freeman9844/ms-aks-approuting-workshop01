@@ -102,4 +102,4 @@ rm -f ~/.approuting-ws-env cert-policy.json
 
 ---
 
-[← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) | [처음으로 (README)](../README.md)
+[← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) 또는 [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | [처음으로 (README)](../README.md)

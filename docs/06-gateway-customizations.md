@@ -23,6 +23,7 @@ Gateway 리소스를 만들면 application routing add-on(관리형 Istio)이 �
 🟢 **실행**
 ```bash
 source ~/.approuting-ws-env
+echo "STATIC_IP=$STATIC_IP  ZONE_NAME=$ZONE_NAME"
 ```
 
 </details>
