@@ -10,7 +10,6 @@
 <summary>🔄 0단계 — 변수 재설정 (새 터미널/세션에서 시작하는 경우)</summary>
 
 🟢 **실행**
-
 ```bash
 source ~/.approuting-ws-env
 ```
@@ -27,14 +26,12 @@ Azure DNS Zone과 ClusterExternalDNS가 생성한 A 레코드도 동일 RG에 �
 > **참고**: ClusterExternalDNS 리소스 자체를 삭제해도 이미 생성된 DNS 레코드는 자동으로 삭제되지 않습니다. ExternalDNS는 자신이 관리하지 않는다고 판단한 레코드를 보존하는 보수적인 정책을 사용하기 때문입니다. RG 수준의 삭제가 레코드까지 완전히 제거하는 가장 확실한 방법입니다.
 
 🟢 **실행**
-
 ```bash
 az group delete --name $RESOURCE_GROUP --yes --no-wait
 az group show --name $RESOURCE_GROUP --query properties.provisioningState -o tsv
 ```
 
 📋 **예상 출력**
-
 ```
 Deleting
 ```
@@ -48,7 +45,6 @@ Azure Key Vault는 기본적으로 soft-delete가 활성화되어 있습니다. 
 RG 삭제가 완전히 완료된 뒤 다음 명령으로 purge를 수행합니다. 삭제가 아직 진행 중이라면 오류 메시지가 출력되며, 잠시 후 다시 시도하면 됩니다.
 
 🟢 **실행**
-
 ```bash
 az keyvault purge --name $KV_NAME --no-wait 2>/dev/null || echo "삭제 완료 후 다시 시도하세요"
 ```
@@ -60,7 +56,6 @@ az keyvault purge --name $KV_NAME --no-wait 2>/dev/null || echo "삭제 완료 �
 Cloud Shell 환경 파일과 kubectl 컨텍스트를 정리합니다.
 
 🟢 **실행**
-
 ```bash
 rm -f ~/.approuting-ws-env cert-policy.json
 kubectl config delete-context $CLUSTER 2>/dev/null || true
@@ -75,13 +70,11 @@ kubectl config delete-context $CLUSTER 2>/dev/null || true
 RG 삭제 완료 여부는 다음 명령으로 확인합니다. `false`가 출력되면 삭제가 완료된 것입니다.
 
 🟢 **실행**
-
 ```bash
 az group exists --name $RESOURCE_GROUP
 ```
 
 📋 **예상 출력**
-
 ```
 false
 ```

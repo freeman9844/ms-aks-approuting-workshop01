@@ -10,14 +10,12 @@
 <summary>🔄 0단계 — 변수 재설정 (새 터미널/세션에서 시작하는 경우)</summary>
 
 🟢 **실행**
-
 ```bash
 source ~/.approuting-ws-env
 echo "CERT_URI=$CERT_URI"
 ```
 
 🟢 **실행**
-
 ```bash
 az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER --overwrite-existing || true
 ```
@@ -32,7 +30,6 @@ az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER --overwr
 `manifests/gateway-tls.yaml`에는 두 개의 `tls.options` 키가 포함되어 있습니다.
 
 👁️ **예시**
-
 ```yaml
 tls:
   mode: Terminate
@@ -47,7 +44,6 @@ tls:
 `envsubst`로 변수(`$CERT_URI`, `$SA_NAME`, `$ZONE_NAME`)를 치환한 뒤 적용합니다.
 
 🟢 **실행**
-
 ```bash
 cd ~/ms-aks-approuting-workshop01
 envsubst < manifests/gateway-tls.yaml | kubectl apply -n $APP_NAMESPACE -f -
@@ -61,14 +57,12 @@ kubectl wait -n $APP_NAMESPACE --for=condition=programmed gateway httpbin-gatewa
 Gateway에 `tls-cert-keyvault-uri`가 적용되면 Application Routing operator가 자동으로 `SecretProviderClass`를 생성하고, Secrets Store CSI Driver가 Key Vault에서 인증서를 동기화해 `kubernetes.io/tls` Secret을 생성합니다.
 
 🟢 **실행**
-
 ```bash
 kubectl get secretproviderclass,secret -n $APP_NAMESPACE
 kubectl get gateway httpbin-gateway -n $APP_NAMESPACE -o jsonpath='{.spec.listeners[?(@.name=="https")].tls.certificateRefs}' && echo
 ```
 
 📋 **예상 출력**
-
 ```
 NAME                                                       AGE
 secretproviderclass.secrets-store.csi.x-k8s.io/kv-gw-cert-httpbin-gateway-https   ...
@@ -89,7 +83,6 @@ Gateway의 `certificateRefs`가 이 Secret을 참조하면 HTTPS 리스너가 �
 `ClusterExternalDNS`는 Application Routing 애드온이 관리하는 ExternalDNS 인스턴스를 클러스터 수준에서 선언하는 리소스입니다.
 
 👁️ **예시**
-
 ```yaml
 spec:
   resourceName: workshop-cluster-dns
@@ -108,7 +101,6 @@ spec:
 - **`identity.serviceAccount`**: DNS Zone Contributor 역할을 가진 UAMI와 FIC로 연결된 SA를 지정합니다.
 
 🟢 **실행**
-
 ```bash
 envsubst < manifests/cluster-external-dns.yaml | kubectl apply -f -
 kubectl get pods -n $APP_NAMESPACE -l app=workshop-cluster-dns 2>/dev/null; kubectl get clusterexternaldns
@@ -121,13 +113,11 @@ kubectl get pods -n $APP_NAMESPACE -l app=workshop-cluster-dns 2>/dev/null; kube
 ExternalDNS 파드가 Gateway와 HTTPRoute의 호스트명을 감지해 Azure DNS에 A 레코드를 등록하기까지 약 1분 정도 걸릴 수 있습니다.
 
 🟢 **실행**
-
 ```bash
 az network dns record-set a list --resource-group $RESOURCE_GROUP --zone-name $ZONE_NAME -o table
 ```
 
 📋 **예상 출력**
-
 ```
 Name      ResourceGroup    Ttl    Type    ProvisioningState    Fqdn
 --------  ---------------  -----  ------  -------------------  ----------------------
@@ -143,7 +133,6 @@ httpbin   <rg>             300    A       Succeeded            httpbin.<zone>.
 > ⏳ 이 단계를 진행하기 전에 4단계 A 레코드가 확인되었는지 먼저 확인합니다.
 
 🟢 **실행**
-
 ```bash
 NS=$(az network dns zone show --resource-group $RESOURCE_GROUP --name $ZONE_NAME --query 'nameServers[0]' -o tsv | sed 's/\.$//')
 GATEWAY_IP=$(dig +short @${NS} httpbin.${ZONE_NAME} | tail -1)
@@ -152,7 +141,6 @@ curl -k -I --resolve "httpbin.${ZONE_NAME}:443:${GATEWAY_IP}" "https://httpbin.$
 ```
 
 📋 **예상 출력**
-
 ```
 NS=ns1-xx.azure-dns.com / IP=<공인 IP>
 HTTP/2 200

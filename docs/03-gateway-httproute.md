@@ -10,14 +10,12 @@
 <summary>🔄 0단계 — 변수 재설정 (새 터미널/세션에서 시작하는 경우)</summary>
 
 🟢 **실행**
-
 ```bash
 source ~/.approuting-ws-env
 echo "RESOURCE_GROUP=$RESOURCE_GROUP"
 ```
 
 🟢 **실행**
-
 ```bash
 az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER --overwrite-existing || true
 ```
@@ -31,7 +29,6 @@ az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER --overwr
 이 모듈부터 `manifests/` 디렉터리의 YAML 파일을 사용합니다. 리포지토리가 없으면 클론하고, 이미 있으면 최신 상태로 업데이트합니다.
 
 🟢 **실행**
-
 ```bash
 cd ~ && git clone https://github.com/jungwoonlee_microsoft/ms-aks-approuting-workshop01.git 2>/dev/null || (cd ms-aks-approuting-workshop01 && git pull)
 cd ~/ms-aks-approuting-workshop01
@@ -45,7 +42,6 @@ cd ~/ms-aks-approuting-workshop01
 `httpbin`은 HTTP 요청의 헤더·파라미터·응답 코드를 그대로 반환하는 테스트용 서비스로, Gateway API 동작을 확인하기에 적합합니다.
 
 🟢 **실행**
-
 ```bash
 kubectl create namespace $APP_NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 export ISTIO_RELEASE="release-1.27"
@@ -62,7 +58,6 @@ kubectl get pods -n $APP_NAMESPACE
 클러스터에 적용하기 전에 매니페스트의 각 필드를 살펴봅니다.
 
 👁️ **예시**
-
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
@@ -111,7 +106,6 @@ spec:
 ## 4. Gateway·HTTPRoute 적용 및 프로그래밍 대기
 
 🟢 **실행**
-
 ```bash
 kubectl apply -n $APP_NAMESPACE -f manifests/gateway-http.yaml
 kubectl wait -n $APP_NAMESPACE --for=condition=programmed gateway httpbin-gateway --timeout=300s
@@ -128,13 +122,11 @@ kubectl wait -n $APP_NAMESPACE --for=condition=programmed gateway httpbin-gatewa
 이 워크샵에서는 `httpbin-gateway`(Gateway 이름)와 `approuting-istio`(GatewayClass 이름)를 조합하여 `httpbin-gateway-approuting-istio`라는 이름이 사용됩니다.
 
 🟢 **실행**
-
 ```bash
 kubectl get deployment,service,hpa,pdb -n $APP_NAMESPACE httpbin-gateway-approuting-istio
 ```
 
 📋 **예상 출력**
-
 ```
 NAME                                                  READY   UP-TO-DATE   AVAILABLE   AGE
 deployment.apps/httpbin-gateway-approuting-istio      2/2     2            2           2m
@@ -158,7 +150,6 @@ poddisruptionbudget.policy/httpbin-gateway-approuting-istio  1               N/A
 Gateway의 외부 IP를 가져와 `Host` 헤더를 지정하여 HTTP 요청을 보냅니다.
 
 🟢 **실행**
-
 ```bash
 export INGRESS_HOST=$(kubectl get gateway httpbin-gateway -n $APP_NAMESPACE -ojsonpath='{.status.addresses[0].value}')
 echo "Gateway IP: $INGRESS_HOST"
@@ -166,7 +157,6 @@ curl -s -I -HHost:httpbin.example.com "http://$INGRESS_HOST/get"
 ```
 
 📋 **예상 출력**
-
 ```
 Gateway IP: 20.XXX.XXX.XXX
 HTTP/1.1 200 OK
@@ -187,14 +177,12 @@ Gateway API의 핵심 개념인 **호스트 매칭**과 **경로 매칭**이 실
 - 매칭에 실패한 요청은 **404**를 반환합니다. 이는 오류가 아니라 Gateway API의 의도된 보안 동작입니다.
 
 🟢 **실행**
-
 ```bash
 curl -s -o /dev/null -w "Host 불일치: %{http_code}\n" "http://$INGRESS_HOST/get"
 curl -s -o /dev/null -w "경로 불일치: %{http_code}\n" -HHost:httpbin.example.com "http://$INGRESS_HOST/headers"
 ```
 
 📋 **예상 출력**
-
 ```
 Host 불일치: 404
 경로 불일치: 404
@@ -214,6 +202,6 @@ Host 불일치: 404
 
 ---
 
-[← 02 — 환경 준비](02-environment-setup.md) | 다음: [04 — Workload Identity와 Key Vault 연동](04-workload-identity-keyvault.md)
+[← 02 — 환경 준비](02-environment-setup.md) | 다음: [04 — DNS·TLS 인프라 준비](04-dns-tls-infra.md)
 
 <!-- TODO(rehearsal): 예상 출력 실측 검증 -->

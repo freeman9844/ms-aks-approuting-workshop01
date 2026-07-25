@@ -10,7 +10,6 @@
 <summary>🔄 0단계 — 변수 재설정 (새 터미널/세션에서 시작하는 경우)</summary>
 
 🟢 **실행**
-
 ```bash
 source ~/.approuting-ws-env
 echo "RESOURCE_GROUP=$RESOURCE_GROUP"
@@ -23,13 +22,11 @@ echo "RESOURCE_GROUP=$RESOURCE_GROUP"
 ## 1. 리소스 그룹 생성
 
 🟢 **실행**
-
 ```bash
 az group create --name $RESOURCE_GROUP --location $LOCATION -o table
 ```
 
 📋 **예상 출력**
-
 ```
 Location      Name
 ------------  -----------------------
@@ -46,7 +43,6 @@ koreacentral  rg-approuting-ws-04271
 > 따라서 이 워크샵에서는 모든 애드온과 기능을 `az aks create` 한 번에 활성화합니다.
 
 🟢 **실행**
-
 ```bash
 az aks create \
   --resource-group $RESOURCE_GROUP \
@@ -126,7 +122,6 @@ Gateway API는 역할에 따라 오브젝트를 분리합니다.
 다음 다이어그램은 이 워크샵에서 구성할 트래픽 흐름을 보여줍니다.
 
 👁️ **예시**
-
 ```mermaid
 graph LR
     A[사용자] -->|HTTP/HTTPS| B["Gateway\n(approuting-istio LB)"]
@@ -142,7 +137,6 @@ graph LR
 클러스터 생성이 완료되면 자격 증명을 가져오고 주요 구성 요소를 검증합니다.
 
 🟢 **실행**
-
 ```bash
 az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER --overwrite-existing
 kubectl get crds | grep gateway.networking.k8s.io
@@ -151,7 +145,6 @@ kubectl get gatewayclass
 ```
 
 📋 **예상 출력**
-
 ```
 # kubectl get crds | grep gateway.networking.k8s.io
 gatewayclasses.gateway.networking.k8s.io        ...
@@ -184,6 +177,6 @@ Gateway API CRD 5종(gatewayclasses, gateways, grpcroutes, httproutes, reference
 
 ---
 
-[← 01 — 사전 준비](01-prerequisites.md) | 다음: [03 — 첫 번째 Gateway 배포](03-first-gateway.md)
+[← 01 — 사전 준비](01-prerequisites.md) | 다음: [03 — Gateway·HTTPRoute로 HTTP 노출](03-gateway-httproute.md)
 
 <!-- TODO(rehearsal): 예상 출력 실측 검증 -->

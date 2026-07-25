@@ -10,14 +10,12 @@
 <summary>🔄 0단계 — 변수 재설정 (새 터미널/세션에서 시작하는 경우)</summary>
 
 🟢 **실행**
-
 ```bash
 source ~/.approuting-ws-env
 echo "RESOURCE_GROUP=$RESOURCE_GROUP  CLUSTER=$CLUSTER"
 ```
 
 🟢 **실행**
-
 ```bash
 az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER --overwrite-existing || true
 ```
@@ -33,7 +31,6 @@ az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER --overwr
 실제 운영 환경에서는 등록기관에서 NS 레코드를 Azure DNS의 네임서버로 위임해야 합니다.
 
 🟢 **실행**
-
 ```bash
 az network dns zone create --resource-group $RESOURCE_GROUP --name $ZONE_NAME
 export ZONE_ID=$(az network dns zone show --resource-group $RESOURCE_GROUP --name $ZONE_NAME --query id -o tsv)
@@ -49,7 +46,6 @@ Application Routing 애드온은 Key Vault를 RBAC 인가 모드로만 지원합
 이 역할은 다음 단계에서 자체 서명 인증서를 생성하는 데 필요합니다.
 
 🟢 **실행**
-
 ```bash
 az keyvault create \
   --name $KV_NAME \
@@ -79,7 +75,6 @@ Application Routing operator는 이 URI를 사용해 인증서가 교체될 때�
 `sed 's|/[^/]*$||'` 표현식은 Microsoft Learn 원문 그대로이며, 패턴과 치환 값에 변수 보간이 없어 `|` 구분자가 안전하게 사용됩니다.
 
 🟢 **실행**
-
 ```bash
 cat > cert-policy.json <<EOF
 {
@@ -120,7 +115,6 @@ User-Assigned Managed Identity(UAMI)를 생성하고 두 가지 Azure 역할을 
 - **Key Vault Secrets User** — Key Vault 스코프: CSI 드라이버가 인증서 시크릿을 읽습니다.
 
 🟢 **실행**
-
 ```bash
 az identity create --resource-group $RESOURCE_GROUP --name $UAMI_NAME --location $LOCATION
 export UAMI_CLIENT_ID=$(az identity show --resource-group $RESOURCE_GROUP --name $UAMI_NAME --query clientId -o tsv)
@@ -152,7 +146,6 @@ Workload Identity는 파드가 Kubernetes ServiceAccount(SA) 토큰을 Entra ID 
 - **`labels.azure.workload.identity/use: "true"`**: Workload Identity Mutating Webhook이 이 SA를 사용하는 파드에 자동으로 토큰 볼륨과 환경 변수를 주입하도록 지시합니다.
 
 🟢 **실행**
-
 ```bash
 export OIDC_ISSUER=$(az aks show --resource-group $RESOURCE_GROUP --name $CLUSTER --query oidcIssuerProfile.issuerUrl -o tsv)
 
@@ -183,7 +176,6 @@ EOF
 Task 5(05 모듈)에서 복원할 수 있도록 이 단계에서 생성한 세 변수를 환경 파일에 추가합니다.
 
 🟢 **실행**
-
 ```bash
 cat >> ~/.approuting-ws-env <<EOF
 export ZONE_ID=$ZONE_ID
@@ -210,7 +202,6 @@ Entra ID는 FIC에 등록된 OIDC Issuer URL과 `subject`(`system:serviceaccount
 Gateway에 `kubernetes.azure.com/tls-cert-keyvault-uri` 어노테이션을 추가하면 Application Routing operator가 다음 흐름으로 TLS를 자동 구성합니다.
 
 👁️ **예시**
-
 ```mermaid
 sequenceDiagram
     participant U as 사용자(kubectl)
