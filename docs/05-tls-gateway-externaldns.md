@@ -64,17 +64,18 @@ kubectl get gateway httpbin-gateway -n $APP_NAMESPACE -o jsonpath='{.spec.listen
 
 📋 **예상 출력**
 ```
-NAME                                                       AGE
-secretproviderclass.secrets-store.csi.x-k8s.io/kv-gw-cert-httpbin-gateway-https   ...
+NAME                                                                              AGE
+secretproviderclass.secrets-store.csi.x-k8s.io/kv-gw-cert-httpbin-gateway-https   1m
 
-NAME                                           TYPE                DATA   AGE
-secret/kv-gw-cert-httpbin-gateway-https       kubernetes.io/tls   2      ...
+NAME                                      TYPE                DATA   AGE
+secret/kv-gw-cert-httpbin-gateway-https   kubernetes.io/tls   2      1m
 
-[{"name":"kv-gw-cert-httpbin-gateway-https","namespace":"workshop"}]
+[{"group":"","kind":"Secret","name":"kv-gw-cert-httpbin-gateway-https","namespace":"workshop"}]
 ```
 
 `SecretProviderClass`와 동일한 이름(`kv-gw-cert-httpbin-gateway-https`)의 `kubernetes.io/tls` Secret이 생성되고,
 Gateway의 `certificateRefs`가 이 Secret을 참조하면 HTTPS 리스너가 활성화됩니다.
+operator는 인증서 동기화를 담당하는 같은 이름의 Deployment(`kv-gw-cert-httpbin-gateway-https`)도 함께 생성합니다.
 
 ---
 
@@ -103,8 +104,19 @@ spec:
 🟢 **실행**
 ```bash
 envsubst < manifests/cluster-external-dns.yaml | kubectl apply -f -
-kubectl get pods -n $APP_NAMESPACE -l app=workshop-cluster-dns 2>/dev/null; kubectl get clusterexternaldns
+kubectl get pods -n $APP_NAMESPACE -l app=workshop-cluster-dns-external-dns 2>/dev/null; kubectl get clusterexternaldns
 ```
+
+📋 **예상 출력**
+```
+NAME                                                  READY   STATUS    RESTARTS   AGE
+workshop-cluster-dns-external-dns-7f7d58bfc8-4cq9h    1/1     Running   0          44s
+
+NAME                   AGE
+workshop-cluster-dns   34s
+```
+
+> **참고** operator는 `resourceName` 뒤에 `-external-dns`를 붙인 이름(`workshop-cluster-dns-external-dns`)으로 Deployment와 파드를 생성합니다.
 
 ---
 
@@ -119,9 +131,9 @@ az network dns record-set a list --resource-group $RESOURCE_GROUP --zone-name $Z
 
 📋 **예상 출력**
 ```
-Name      ResourceGroup    Ttl    Type    ProvisioningState    Fqdn
---------  ---------------  -----  ------  -------------------  ----------------------
-httpbin   <rg>             300    A       Succeeded            httpbin.<zone>.
+TTL    Fqdn                                          Name     ProvisioningState    ResourceGroup
+-----  --------------------------------------------  -------  -------------------  ----------------------
+300    httpbin.ws20692.approuting-workshop.example.  httpbin  Succeeded            rg-approuting-ws-20692
 ```
 
 `httpbin` A 레코드 1건이 TTL 300으로 등록되어 있으면 정상입니다.
@@ -142,10 +154,14 @@ curl -k -I --resolve "httpbin.${ZONE_NAME}:443:${GATEWAY_IP}" "https://httpbin.$
 
 📋 **예상 출력**
 ```
-NS=ns1-xx.azure-dns.com / IP=<공인 IP>
-HTTP/2 200
+NS=ns1-04.azure-dns.com / IP=20.249.51.10
+HTTP/2 200 
+access-control-allow-credentials: true
+access-control-allow-origin: *
+content-type: application/json; charset=utf-8
+date: Sat, 25 Jul 2026 07:22:08 GMT
+x-envoy-upstream-service-time: 0
 server: istio-envoy
-...
 ```
 
 > **📚 교육 포인트**
@@ -162,13 +178,12 @@ server: istio-envoy
 
 | 증상 | 원인 | 해결 방법 |
 |------|------|-----------|
+| Secret은 물론 `SecretProviderClass`도 전혀 생성되지 않고 `kubectl get clusterexternaldns`가 CRD 없음 오류를 반환 | application routing 애드온(operator)이 비활성화됨 — `--enable-app-routing-istio`만으로는 operator가 켜지지 않음 | `az aks show -g $RESOURCE_GROUP -n $CLUSTER --query ingressProfile.webAppRouting.enabled -o tsv`가 `false`이면 `az aks approuting enable -g $RESOURCE_GROUP -n $CLUSTER`를 실행합니다(2–10분 소요). 완료 후 operator가 기존 Gateway 어노테이션을 자동으로 reconcile합니다 |
 | `kubectl get secret -n $APP_NAMESPACE`에 `kv-gw-cert-*` Secret이 생성되지 않음 | SA의 `azure.workload.identity/client-id` annotation 누락, `azure.workload.identity/use: "true"` label 누락, 또는 FIC `subject` 불일치 | `kubectl describe secretproviderclass -n $APP_NAMESPACE`로 오류 메시지를 확인합니다. `kubectl get sa $SA_NAME -n $APP_NAMESPACE -o yaml`로 annotation/label을 점검하고, `az identity federated-credential list --identity-name $UAMI_NAME -g $RESOURCE_GROUP`으로 `subject` 값이 `system:serviceaccount:$APP_NAMESPACE:$SA_NAME`과 일치하는지 확인합니다 |
-| A 레코드가 생성되지 않음 | ExternalDNS 파드의 DNS Zone Contributor 권한이 아직 전파 중이거나, `ClusterExternalDNS`의 `dnsZoneResourceIDs`가 올바르지 않음 | `kubectl logs -n $APP_NAMESPACE deploy/workshop-cluster-dns`로 ExternalDNS 로그를 확인합니다. `az role assignment list --scope $ZONE_ID`로 UAMI에 DNS Zone Contributor가 부여되었는지 확인합니다. RBAC 전파에 최대 5분이 소요될 수 있습니다 |
+| A 레코드가 생성되지 않음 | ExternalDNS 파드의 DNS Zone Contributor 권한이 아직 전파 중이거나, `ClusterExternalDNS`의 `dnsZoneResourceIDs`가 올바르지 않음 | `kubectl logs -n $APP_NAMESPACE deploy/workshop-cluster-dns-external-dns`로 ExternalDNS 로그를 확인합니다. `az role assignment list --scope $ZONE_ID`로 UAMI에 DNS Zone Contributor가 부여되었는지 확인합니다. RBAC 전파에 최대 5분이 소요될 수 있습니다 |
 | `curl: (60) SSL certificate problem` 오류 발생 | `-k` 옵션 없이 자체 서명 인증서 엔드포인트에 접속함 | 검증 명령에 `-k` 플래그를 추가합니다. 실 운영에서 CA 서명 인증서를 사용한다면 `-k` 없이 `--cacert <ca.crt>`로 올바른 루트 CA를 지정하세요 |
 | `envsubst` 적용 후 YAML에 빈 값(`${CERT_URI}` 등이 그대로 남음)이 나타남 | 0단계를 수행하지 않아 환경 변수가 설정되지 않음 | 0단계의 `source ~/.approuting-ws-env`를 실행한 뒤 `echo $CERT_URI`로 값이 채워졌는지 확인합니다 |
 
 ---
 
 [← 04 — DNS·TLS 인프라 준비](04-dns-tls-infra.md) | 다음: [06 — 정리](06-cleanup.md)
-
-<!-- TODO(rehearsal): 예상 출력 실측 검증 -->

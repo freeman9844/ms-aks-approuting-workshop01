@@ -128,18 +128,20 @@ kubectl get deployment,service,hpa,pdb -n $APP_NAMESPACE httpbin-gateway-approut
 
 📋 **예상 출력**
 ```
-NAME                                                  READY   UP-TO-DATE   AVAILABLE   AGE
-deployment.apps/httpbin-gateway-approuting-istio      2/2     2            2           2m
+NAME                                               READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/httpbin-gateway-approuting-istio   2/2     2            2           3m55s
 
-NAME                                         TYPE           CLUSTER-IP    EXTERNAL-IP      PORT(S)        AGE
-service/httpbin-gateway-approuting-istio     LoadBalancer   10.0.X.X      20.XXX.XXX.XXX   80:XXXXX/TCP   2m
+NAME                                       TYPE           CLUSTER-IP    EXTERNAL-IP    PORT(S)                        AGE
+service/httpbin-gateway-approuting-istio   LoadBalancer   10.0.132.62   20.249.51.10   15021:31390/TCP,80:30809/TCP   3m55s
 
-NAME                                                                  REFERENCE                                        TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
-horizontalpodautoscaler.autoscaling/httpbin-gateway-approuting-istio  Deployment/httpbin-gateway-approuting-istio      <unknown>/50%   2         5         2          2m
+NAME                                                                   REFERENCE                                     TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/httpbin-gateway-approuting-istio   Deployment/httpbin-gateway-approuting-istio   cpu: 2%/80%   2         5         2          3m56s
 
-NAME                                                         MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
-poddisruptionbudget.policy/httpbin-gateway-approuting-istio  1               N/A               1                     2m
+NAME                                                          MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
+poddisruptionbudget.policy/httpbin-gateway-approuting-istio   1               N/A               1                     3m56s
 ```
+
+> **참고** Service의 `PORT(S)`에는 80 외에 Istio 상태 점검용 포트 `15021`이 함께 노출됩니다. HPA `TARGETS`는 metrics-server 수집 직후 일시적으로 `<unknown>/80%`로 보일 수 있습니다.
 
 > **참고** `EXTERNAL-IP`에 실제 IP가 표시되면 다음 단계로 진행합니다. `<pending>` 상태가 지속되면 아래 트러블슈팅 표를 참고합니다.
 
@@ -158,10 +160,15 @@ curl -s -I -HHost:httpbin.example.com "http://$INGRESS_HOST/get"
 
 📋 **예상 출력**
 ```
-Gateway IP: 20.XXX.XXX.XXX
+Gateway IP: 20.249.51.10
 HTTP/1.1 200 OK
+access-control-allow-credentials: true
+access-control-allow-origin: *
+content-type: application/json; charset=utf-8
+date: Sat, 25 Jul 2026 06:17:41 GMT
+x-envoy-upstream-service-time: 0
 server: istio-envoy
-...
+transfer-encoding: chunked
 ```
 
 `HTTP/1.1 200 OK`가 반환되면 Gateway와 HTTPRoute가 올바르게 동작하고 있는 것입니다.
@@ -203,5 +210,3 @@ Host 불일치: 404
 ---
 
 [← 02 — 환경 준비](02-environment-setup.md) | 다음: [04 — DNS·TLS 인프라 준비](04-dns-tls-infra.md)
-
-<!-- TODO(rehearsal): 예상 출력 실측 검증 -->

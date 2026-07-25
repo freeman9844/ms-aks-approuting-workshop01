@@ -22,7 +22,7 @@ az account show --query '{name:name, id:id}' -o table
 
 ## 2. az CLI 버전 확인
 
-이 워크샵은 `--enable-gateway-api`, `--enable-app-routing-istio` 플래그를 사용합니다. az CLI **2.86.0 이상**이 필요합니다.
+이 워크샵은 `--enable-gateway-api`, `--enable-app-routing`, `--enable-app-routing-istio` 플래그를 사용합니다. az CLI **2.86.0 이상**이 필요합니다.
 
 🟢 **실행**
 ```bash
@@ -31,7 +31,7 @@ az version --query '"azure-cli"' -o tsv
 
 📋 **예상 출력**
 ```
-2.86.0
+2.87.0
 ```
 
 버전이 낮다면 Cloud Shell은 자동 업데이트되지만 반영에 지연이 있을 수 있습니다. Cloud Shell 세션을 닫고 새 세션을 열어 재확인합니다. 그래도 낮다면 다음을 실행합니다.
@@ -107,5 +107,3 @@ echo "SUFFIX=$SUFFIX 저장 완료"
 ---
 
 [← README](../README.md) | 다음: [02 — 환경 준비](02-environment-setup.md)
-
-<!-- TODO(rehearsal): 예상 출력 실측 검증 -->

@@ -51,6 +51,7 @@ az aks create \
   --node-count 2 \
   --node-vm-size Standard_D2s_v5 \
   --enable-gateway-api \
+  --enable-app-routing \
   --enable-app-routing-istio \
   --enable-oidc-issuer \
   --enable-workload-identity \
@@ -63,7 +64,8 @@ az aks create \
 | 플래그 | 역할 | 사용 모듈 |
 |--------|------|----------|
 | `--enable-gateway-api` | Kubernetes Gateway API CRD(standard 채널) 설치 및 관리형 GatewayClass `approuting-istio` 구성 | 03, 04, 05 |
-| `--enable-app-routing-istio` | application routing 애드온 활성화 + Istio 기반 Ingress 컨트롤러(`aks-istio-ingress` 네임스페이스) 배포 | 03, 04, 05 |
+| `--enable-app-routing` | application routing 애드온(operator) 활성화 — TLS 어노테이션 reconcile과 `ClusterExternalDNS` CRD를 제공 | 04, 05 |
+| `--enable-app-routing-istio` | Gateway API용 Istio 기반 Ingress 구현 활성화 — Gateway 오브젝트마다 Istio Ingress 배포를 자동 생성 | 03, 04, 05 |
 | `--enable-oidc-issuer` | 클러스터 전용 OIDC Issuer URL 발급(Workload Identity의 전제 조건) | 04 |
 | `--enable-workload-identity` | Kubernetes ServiceAccount를 Azure AD Managed Identity에 연결하는 Workload Identity 활성화 | 04 |
 | `--enable-addons azure-keyvault-secrets-provider` | Key Vault에서 인증서와 시크릿을 CSI 드라이버로 마운트하는 애드온 활성화 | 05 |
@@ -99,7 +101,9 @@ Gateway API는 역할에 따라 오브젝트를 분리합니다.
 
 ### application routing 애드온의 Gateway API vs Istio 서비스 메시 애드온
 
-이 워크샵에서는 `--enable-app-routing-istio` 플래그를 사용하지만, 두 개념을 혼동하지 않는 것이 중요합니다.
+이 워크샵에서는 `--enable-app-routing`(애드온 operator)과 `--enable-app-routing-istio`(Istio 기반 Gateway API 구현) 두 플래그를 함께 사용하지만, Istio **서비스 메시** 애드온과 혼동하지 않는 것이 중요합니다.
+
+> **주의** `--enable-app-routing-istio`만으로는 애드온 operator(`webAppRouting.enabled`)가 켜지지 않습니다. operator가 없으면 04–05 모듈의 TLS 어노테이션 처리와 `ClusterExternalDNS`가 동작하지 않으므로, 반드시 `--enable-app-routing`을 함께 지정합니다.
 
 | 항목 | application routing 애드온 (Gateway API 모드) | Istio 서비스 메시 애드온 |
 |------|-----------------------------------------------|------------------------|
@@ -147,23 +151,25 @@ kubectl get gatewayclass
 📋 **예상 출력**
 ```
 # kubectl get crds | grep gateway.networking.k8s.io
-gatewayclasses.gateway.networking.k8s.io        ...
-gateways.gateway.networking.k8s.io              ...
-grpcroutes.gateway.networking.k8s.io            ...
-httproutes.gateway.networking.k8s.io            ...
-referencegrants.gateway.networking.k8s.io       ...
+backendtlspolicies.gateway.networking.k8s.io                2026-07-25T06:00:23Z
+gatewayclasses.gateway.networking.k8s.io                    2026-07-25T06:00:23Z
+gateways.gateway.networking.k8s.io                          2026-07-25T06:00:23Z
+grpcroutes.gateway.networking.k8s.io                        2026-07-25T06:00:23Z
+httproutes.gateway.networking.k8s.io                        2026-07-25T06:00:23Z
+referencegrants.gateway.networking.k8s.io                   2026-07-25T06:00:23Z
 
 # kubectl get pods -n aks-istio-system
-NAME                              READY   STATUS    RESTARTS   AGE
-istiod-asm-1-21-xxxxxxxxx-xxxxx   1/1     Running   0          5m
-istiod-asm-1-21-xxxxxxxxx-xxxxx   1/1     Running   0          5m
+NAME                      READY   STATUS    RESTARTS   AGE
+istiod-79bbfdd45c-gflcf   1/1     Running   0          5m40s
+istiod-79bbfdd45c-wmt97   1/1     Running   0          5m55s
 
 # kubectl get gatewayclass
-NAME               CONTROLLER                                    ACCEPTED   AGE
-approuting-istio   approuting.kubernetes.azure.com/gateway       True       5m
+NAME               CONTROLLER                               ACCEPTED   AGE
+approuting-istio   istio.aks.azure.com/gateway-controller   True       4m24s
+istio-remote       istio.io/unmanaged-gateway               True       4m24s
 ```
 
-Gateway API CRD 5종(gatewayclasses, gateways, grpcroutes, httproutes, referencegrants)이 모두 확인되고, `istiod-*` 파드 2개가 `Running` 상태이며, `approuting-istio` GatewayClass가 `Accepted: True`로 표시되면 환경 준비가 완료된 것입니다.
+Gateway API CRD 6종(backendtlspolicies 포함)이 모두 확인되고, `istiod-*` 파드 2개가 `Running` 상태이며, `approuting-istio` GatewayClass가 `ACCEPTED: True`로 표시되면 환경 준비가 완료된 것입니다. `istio-remote` GatewayClass는 Istio가 기본 등록하는 클래스로 이 워크샵에서는 사용하지 않습니다.
 
 ---
 
@@ -178,5 +184,3 @@ Gateway API CRD 5종(gatewayclasses, gateways, grpcroutes, httproutes, reference
 ---
 
 [← 01 — 사전 준비](01-prerequisites.md) | 다음: [03 — Gateway·HTTPRoute로 HTTP 노출](03-gateway-httproute.md)
-
-<!-- TODO(rehearsal): 예상 출력 실측 검증 -->

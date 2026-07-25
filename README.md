@@ -101,8 +101,10 @@ flowchart LR
 | `EXTERNAL-IP`가 `<pending>` 상태로 계속 유지 | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
 | `kubectl wait` 명령이 타임아웃(`condition not met`) | [03 — Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) |
 | `az keyvault certificate create` 실행 시 `ForbiddenByRbac(403)` 오류 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
+| `az keyvault certificate create` 실행 시 `Public network access is disabled` 오류 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
 | `az ad signed-in-user show` 명령이 오류를 반환하거나 값이 비어 있음 | [04 — DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) |
 | `kv-gw-cert-*` Secret이 생성되지 않음 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
+| `SecretProviderClass`·`clusterexternaldns` CRD 자체가 없음 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
 | A 레코드가 생성되지 않음 | [05 — TLS Gateway와 ClusterExternalDNS](docs/05-tls-gateway-externaldns.md) |
 | RG 삭제가 10분 이상 걸림 | [06 — 정리](docs/06-cleanup.md) |
 | `az keyvault purge` 실행 시 권한 오류 발생 | [06 — 정리](docs/06-cleanup.md) |

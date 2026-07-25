@@ -62,6 +62,8 @@ az role assignment create \
 ```
 
 > **참고** Azure RBAC 전파에는 최대 1–2분이 소요됩니다. 다음 단계에서 403 오류가 발생하면 잠시 기다린 뒤 재시도합니다.
+>
+> **주의(관리형 구독)** 조직의 Azure Policy(예: Microsoft 내부 MCAPS 구독의 `SFI - Disable public network access on Key Vaults`)가 Key Vault 생성·수정 시 `publicNetworkAccess`를 자동으로 `Disabled`로 되돌리는 경우가 있습니다. 이 상태에서는 다음 단계의 인증서 생성이 `ForbiddenByConnection` 오류로 실패합니다. 해결 방법은 아래 트러블슈팅 표를 참고합니다.
 
 ---
 
@@ -229,6 +231,7 @@ operator가 Gateway 어노테이션을 감지하는 순간부터 HTTPS 리스너
 
 | 증상 | 원인 | 해결 방법 |
 |------|------|-----------|
+| `az keyvault certificate create` 실행 시 `(Forbidden) Public network access is disabled ... ForbiddenByConnection` 오류 | 조직 Azure Policy(Modify 효과)가 Key Vault의 `publicNetworkAccess`를 자동으로 `Disabled`로 강제함 (Microsoft 내부 MCAPS 구독의 `KeyVault_PublicNetwork_Modify` 정책 등) | 정책의 제외 태그를 Vault에 부여한 뒤 공용 액세스를 다시 켭니다: `az tag update --resource-id $(az keyvault show --name $KV_NAME --query id -o tsv) --operation Merge --tags SecurityControl=Ignore` 실행 후 `az keyvault update --name $KV_NAME --public-network-access Enabled`. `az keyvault show --name $KV_NAME --query properties.publicNetworkAccess -o tsv`가 `Enabled`를 유지하는지 확인하고 인증서 생성을 재시도합니다 |
 | `az keyvault certificate create` 실행 시 `ForbiddenByRbac(403)` 오류 | Key Vault Certificates Officer RBAC 전파 지연(최대 1–2분) | 1–2분 후 동일 명령을 재실행합니다. `az role assignment list --scope $(az keyvault show --name $KV_NAME --query id -o tsv) --assignee $MY_OBJECT_ID`로 역할이 반영됐는지 먼저 확인할 수 있습니다 |
 | `az ad signed-in-user show` 명령이 오류를 반환하거나 값이 비어 있음 | 게스트 계정(외부 테넌트 초대 계정)으로 로그인된 경우 이 API를 사용할 수 없음 | 워크샵 테넌트의 구성원(Member) 계정으로 재로그인(`az login`)하거나, 강사에게 오브젝트 ID를 직접 받아 `MY_OBJECT_ID` 변수에 수동으로 입력합니다 |
 | 05 모듈에서 TLS 인증서가 마운트되지 않거나 FIC 인증 실패 | `az identity federated-credential create` 시 `--subject` 값에 오타 (`namespace` 또는 `sa-name` 불일치) | `az identity federated-credential list --identity-name $UAMI_NAME --resource-group $RESOURCE_GROUP`로 `subject` 값을 확인하고, `kubectl get sa $SA_NAME -n $APP_NAMESPACE`의 이름과 일치하는지 비교합니다. 불일치 시 FIC를 삭제하고 재생성합니다 |
@@ -236,5 +239,3 @@ operator가 Gateway 어노테이션을 감지하는 순간부터 HTTPS 리스너
 ---
 
 [← 03 — Gateway·HTTPRoute로 HTTP 노출](03-gateway-httproute.md) | 다음: [05 — TLS Gateway와 ClusterExternalDNS](05-tls-gateway-externaldns.md)
-
-<!-- TODO(rehearsal): 예상 출력 실측 검증 -->

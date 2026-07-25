@@ -92,5 +92,3 @@ false
 ---
 
 [← 05 — TLS Gateway와 ClusterExternalDNS](05-tls-gateway-externaldns.md) | [처음으로 (README)](../README.md)
-
-<!-- TODO(rehearsal): 예상 출력 실측 검증 -->
