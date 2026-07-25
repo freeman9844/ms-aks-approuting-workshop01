@@ -30,7 +30,7 @@ flowchart LR
 3. HTTPRoute의 `hostname`·`path` 매칭 동작을 직접 관찰한다.
 4. Azure DNS zone·Key Vault 인증서·UAMI·페더레이션 자격 증명(FIC)으로 operator 통합 인프라를 구성한다.
 5. Gateway annotation 기반 TLS 종료와 정적 IP 기반 A 레코드 등록을 확인한다. (옵션: ClusterExternalDNS를 통한 A 레코드 자동 발행)
-6. (옵션) 자동 생성되는 Gateway 인프라(Service·Deployment·HPA·PDB)를 Annotation·ConfigMap으로 커스터마이징한다.
+6. (옵션) 자동 생성되는 Gateway 인프라(Service·Deployment·HPA·PDB)를 ConfigMap으로 재정의하고, Annotation으로 내부 Load Balancer 전환을 수행한다.
 7. 실습에 사용한 모든 Azure 리소스를 완전히 정리한다.
 
 ---
@@ -55,7 +55,7 @@ flowchart LR
 | 03 | [Gateway·HTTPRoute로 HTTP 노출](docs/03-gateway-httproute.md) | Gateway·HTTPRoute 매니페스트 적용, LB IP 확인·동작 검증, 정적 공인 IP 고정 |
 | 04 | [DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) | DNS zone·Key Vault·UAMI·FIC 생성 및 RBAC 구성 |
 | 05 | [TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) | TLS Gateway 적용, 정적 IP로 A 레코드 등록 (옵션: ClusterExternalDNS 자동 발행) |
-| 06 | [Gateway 인프라 커스터마이징 (옵션)](docs/06-gateway-customizations.md) | 자동 생성 인프라(Service/HPA/PDB)의 Annotation·ConfigMap 커스터마이징 |
+| 06 | [Gateway 인프라 커스터마이징 (옵션)](docs/06-gateway-customizations.md) | ConfigMap으로 HPA·Deployment 재정의, Annotation으로 내부 LB 전환 |
 | 07 | [정리](docs/07-cleanup.md) | 전체 Azure 리소스 삭제 |
 
 ---
@@ -69,7 +69,7 @@ flowchart LR
 | 03 | Gateway·HTTPRoute로 HTTP 노출 | 15–20분 (LB IP 할당·정적 IP 구성 대기 포함) | Azure LB 프로비저닝 |
 | 04 | DNS·TLS 인프라 준비 | 15–20분 (RBAC 전파 대기 포함) | RBAC 전파 지연 |
 | 05 | TLS Gateway와 DNS A 레코드 | 10–15분 (인증서 동기화 대기 포함, ExternalDNS 옵션 +10분) | Key Vault 동기화 |
-| 06 | Gateway 인프라 커스터마이징 (옵션) | 10–15분 | HPA 반영 대기 (약 30초 ×2회) |
+| 06 | Gateway 인프라 커스터마이징 (옵션) | 10–15분 | HPA 반영·내부 LB 재구성 대기 |
 | 07 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
 | **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 수행 시 +10–15분)** | |
 
