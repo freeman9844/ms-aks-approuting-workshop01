@@ -2,7 +2,7 @@
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
-예상 소요 시간: 50–80분 (Azure Front Door 전파 대기가 대부분 — 각 구성 변경마다 5–15분)
+예상 소요 시간: 50–90분 (Azure Front Door 전파 대기가 대부분 — 각 구성 변경마다 5–30분, 날에 따라 편차 큼)
 
 > **옵션 모듈**: 이 모듈은 선택 사항입니다. 건너뛰고 바로 [08 — 정리](08-cleanup.md)로 이동해도 됩니다.
 
@@ -158,12 +158,12 @@ AFD_HOST=ep-mig-35448-enh2hcaaf7eehpgd.b02.azurefd.net
 AFD 구성 완료
 ```
 
-새로 만든 AFD 엔드포인트는 전 세계 엣지로 전파되기까지 **약 10분** 걸립니다. 전파 전에는 AFD 기본 404 페이지가 반환됩니다.
+새로 만든 AFD 엔드포인트는 전 세계 엣지로 전파되기까지 **약 10–25분** 걸립니다(실측 편차가 큽니다). 전파 전에는 AFD 기본 404 페이지가 반환됩니다.
 
 🟢 **실행**
 ```bash
-# 200이 나올 때까지 1분 간격으로 확인 (약 10분 소요)
-for i in $(seq 1 15); do
+# 200이 나올 때까지 1분 간격으로 확인 (10–25분 소요)
+for i in $(seq 1 30); do
   CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 http://$AFD_HOST/get)
   echo "$(date +%H:%M:%S) $CODE"
   [ "$CODE" = "200" ] && break
@@ -178,6 +178,8 @@ done
 ...
 16:47:30 200
 ```
+
+> 200 도달까지 이번 실측에서는 각각 약 9분·25분이 걸렸습니다. 편차가 크므로 404가 계속 나와도 30분까지는 그대로 기다리세요.
 
 이제 클라이언트 트래픽이 **AFD → origin-nginx(ingress-nginx) → httpbin** 경로로 흐릅니다. 기존 운영 환경이 완성됐습니다.
 
@@ -255,6 +257,8 @@ nginx=30 gateway=10 unknown=0
 ```
 
 40회 중 약 10회(25%)가 Gateway로 흘렀습니다. 이 시점부터 실제 사용자 트래픽 일부가 새 데이터 플레인을 검증하고 있는 것입니다. `unknown`이 0이 아니면 AFD가 오류 페이지(404/503)를 반환한 것이므로 트러블슈팅 표를 확인하세요.
+
+> **⚠️ `gateway=0`이 나와도 실패가 아닙니다**: AFD 구성 변경의 엣지 전파는 날에 따라 편차가 커서(실측 5분–30분+), 10분 대기 후에도 새 origin으로 트래픽이 전혀 흐르지 않을 수 있습니다. `az afd origin show --origin-name origin-gateway ... --query deploymentStatus`가 `NotStarted`면 아직 전파 전입니다. 5–10분 더 기다린 뒤 **측정 루프만** 다시 실행하세요.
 
 > **참고**: 낮은 RPS에서는 AFD POP의 분산 특성상 가중치 비율이 정확히 지켜지지 않을 수 있습니다(공식 문서 명시). 측정 횟수를 늘리면 비율이 수렴합니다.
 
@@ -379,8 +383,8 @@ AFD 경유: 200
 | 증상 | 원인 | 해결 방법 |
 |------|------|-----------|
 | 가중치를 설정해도 트래픽 100%가 한 origin으로만 감 | origin group의 `additional-latency-in-milliseconds`가 작아(기본 50ms) 지연 선별 단계에서 한 origin만 선택됨 — 가중치는 같은 지연 버킷 안에서만 적용 | `az afd origin-group update ... --additional-latency-in-milliseconds 1000`으로 상향합니다. 실측으로 확인된 동작입니다 |
-| AFD 엔드포인트가 계속 404를 반환 | 신규 엔드포인트/라우트의 엣지 전파 전 (약 10분 소요) | 1분 간격으로 재시도합니다. 10분 이상 지속되면 `az afd route show`로 라우트의 `--link-to-default-domain Enabled` 여부를 확인합니다 |
-| 가중치·비활성화 변경이 반영되지 않음 | AFD 구성 변경의 글로벌 전파에 5–20분 소요 | 충분히 대기 후 재측정합니다. 컷오버(비활성화)는 특히 오래 걸릴 수 있습니다(실측 최대 20분) |
+| AFD 엔드포인트가 계속 404를 반환 | 신규 엔드포인트/라우트의 엣지 전파 전 (실측 10–25분 소요) | 1분 간격으로 재시도합니다. `az afd route show`에서 `deploymentStatus`가 `NotStarted`면 아직 전파 전이니 그대로 대기합니다. 30분 이상 지속되면 라우트의 `--link-to-default-domain Enabled` 여부를 확인합니다 |
+| 가중치·비활성화 변경이 반영되지 않음 | AFD 구성 변경의 글로벌 전파에 5–30분 이상 소요될 수 있음 (날에 따라 편차 큼) | `az afd origin show ... --query deploymentStatus`가 `NotStarted`면 전파 전입니다. 충분히 대기 후 측정 루프만 재실행합니다. 컷오버(비활성화)는 특히 오래 걸릴 수 있습니다 |
 | 측정 비율이 설정 가중치와 다름 | 낮은 RPS에서는 POP 분산 특성상 비율이 근사치로만 수렴 (공식 문서 명시) | 측정 횟수를 60회 이상으로 늘리거나, 정확한 비율 검증이 필요하면 부하 도구(hey, ab 등)로 RPS를 높입니다 |
 | 새 origin 추가 직후 해당 origin으로 트래픽이 전혀 없음 | health probe 판정 전 (30초 간격 4샘플 중 3성공 필요 ≈ 2분+) 또는 전파 지연 | `kubectl logs -n $APP_NAMESPACE deploy/httpbin`에서 `Edge Health Probe` User-Agent 요청이 200으로 기록되는지 확인 후 5–15분 대기합니다 |
 
