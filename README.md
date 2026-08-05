@@ -6,6 +6,7 @@ Azure Kubernetes Service(AKS)의 **Application Routing 애드온**과 **Gateway 
 
 ## 아키텍처
 
+👁️ **예시** — 전체 아키텍처
 ```mermaid
 flowchart LR
   user([사용자]) -->|"HTTP → HTTPS"| pip["정적 공인 IP"] --> gw["Gateway (approuting-istio)<br/>httpbin-gateway"]

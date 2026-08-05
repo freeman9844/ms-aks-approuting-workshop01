@@ -81,7 +81,7 @@ purge까지 접수된 것을 확인한 뒤 Cloud Shell 환경 파일과 kubectl 
 🟢 **실행**
 ```bash
 kubectl config delete-context $CLUSTER 2>/dev/null || true
-rm -f ~/.approuting-ws-env cert-policy.json
+rm -f ~/.approuting-ws-env ~/cert-policy.json
 ```
 
 ---

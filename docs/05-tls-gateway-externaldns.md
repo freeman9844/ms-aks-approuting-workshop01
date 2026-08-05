@@ -127,6 +127,11 @@ IP가 바뀌지 않는 한 레코드를 갱신할 필요가 없고, 클러스터
 ```bash
 export NODE_RG=$(az aks show --resource-group $RESOURCE_GROUP --name $CLUSTER --query nodeResourceGroup -o tsv)
 export STATIC_IP=$(az network public-ip show --resource-group $NODE_RG --name pip-httpbin-gateway --query ipAddress -o tsv)
+# 재실행에도 안전하도록 기존 record set이 있으면 먼저 제거 (없으면 그냥 통과)
+az network dns record-set a delete \
+  --resource-group $RESOURCE_GROUP \
+  --zone-name $ZONE_NAME \
+  --name httpbin --yes 2>/dev/null || true
 az network dns record-set a add-record \
   --resource-group $RESOURCE_GROUP \
   --zone-name $ZONE_NAME \

@@ -78,7 +78,7 @@ Application Routing operator는 이 URI를 사용해 인증서가 교체될 때�
 
 🟢 **실행**
 ```bash
-cat > cert-policy.json <<EOF
+cat > ~/cert-policy.json <<EOF
 {
   "issuerParameters": { "name": "Self" },
   "keyProperties": { "exportable": true, "keyType": "RSA", "keySize": 2048, "reuseKey": false },
@@ -95,7 +95,7 @@ EOF
 az keyvault certificate create \
   --vault-name $KV_NAME \
   --name $CERT_NAME \
-  --policy @cert-policy.json
+  --policy @$HOME/cert-policy.json
 
 export CERT_URI=$(az keyvault certificate show \
   --vault-name $KV_NAME \

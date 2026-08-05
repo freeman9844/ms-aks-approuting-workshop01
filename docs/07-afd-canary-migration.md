@@ -88,10 +88,12 @@ spec:
               number: 8000
 EOF
 
-# ingress-nginx 컨트롤러의 LB IP 확보
+# ingress-nginx 컨트롤러의 LB IP 확보 (출력이 비어 있으면 10초 후 이 두 줄을 다시 실행)
 export INGRESS_NGINX_IP=$(kubectl get svc -n app-routing-system nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-echo "export INGRESS_NGINX_IP=$INGRESS_NGINX_IP" >> ~/.approuting-ws-env
 echo "INGRESS_NGINX_IP=$INGRESS_NGINX_IP"
+
+# 값이 확인된 뒤에만 env 파일에 저장
+echo "export INGRESS_NGINX_IP=$INGRESS_NGINX_IP" >> ~/.approuting-ws-env
 
 # 두 데이터 플레인 모두 200 응답 확인
 sleep 15
