@@ -31,7 +31,8 @@ flowchart LR
 4. Azure DNS zone·Key Vault 인증서·UAMI·페더레이션 자격 증명(FIC)으로 operator 통합 인프라를 구성한다.
 5. Gateway annotation 기반 TLS 종료와 정적 IP 기반 A 레코드 등록을 확인한다. (옵션: ClusterExternalDNS를 통한 A 레코드 자동 발행)
 6. (옵션) 자동 생성되는 Gateway 인프라(Service·Deployment·HPA·PDB)를 ConfigMap으로 재정의하고, Annotation으로 내부 Load Balancer 전환을 수행한다.
-7. 실습에 사용한 모든 Azure 리소스를 완전히 정리한다.
+7. (옵션) ingress-nginx와 Gateway API 데이터 플레인을 병렬 구성하고, Azure Front Door 가중치 라우팅으로 카나리 마이그레이션을 수행한다.
+8. 실습에 사용한 모든 Azure 리소스를 완전히 정리한다.
 
 ---
 
@@ -56,7 +57,8 @@ flowchart LR
 | 04 | [DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) | DNS zone·Key Vault·UAMI·FIC 생성 및 RBAC 구성 |
 | 05 | [TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) | TLS Gateway 적용, 정적 IP로 A 레코드 등록 (옵션: ClusterExternalDNS 자동 발행) |
 | 06 | [Gateway 인프라 커스터마이징 (옵션)](docs/06-gateway-customizations.md) | ConfigMap으로 HPA·Deployment 재정의, Annotation으로 내부 LB 전환 |
-| 07 | [정리](docs/07-cleanup.md) | 전체 Azure 리소스 삭제 |
+| 07 | [AFD 카나리 마이그레이션 (옵션)](docs/07-afd-canary-migration.md) | ingress-nginx ∥ Gateway API 병렬 구성, Azure Front Door 가중치 카나리로 무중단 이관 |
+| 08 | [정리](docs/08-cleanup.md) | 전체 Azure 리소스 삭제 |
 
 ---
 
@@ -70,8 +72,9 @@ flowchart LR
 | 04 | DNS·TLS 인프라 준비 | 15–20분 (RBAC 전파 대기 포함) | RBAC 전파 지연 |
 | 05 | TLS Gateway와 DNS A 레코드 | 10–15분 (인증서 동기화 대기 포함, ExternalDNS 옵션 +10분) | Key Vault 동기화 |
 | 06 | Gateway 인프라 커스터마이징 (옵션) | 10–15분 | HPA 반영·내부 LB 재구성 대기 |
-| 07 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
-| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 수행 시 +10–15분)** | |
+| 07 | AFD 카나리 마이그레이션 (옵션) | 50–80분 | AFD 라우트·가중치 변경 전파 대기 (회당 5–20분) |
+| 08 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
+| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–80분)** | |
 
 ---
 
@@ -85,8 +88,9 @@ flowchart LR
 | Azure Standard LB | — | Gateway 노출 시 자동 생성 |
 | Azure DNS zone | — | 공개 zone 기준 |
 | Azure Key Vault | — | 자체 서명 인증서 1건 |
+| Azure Front Door Standard (옵션 07) | 기본요금 약 $35/월의 일할 + 요청·전송량 | 실습 1–1.5시간 기준 소액, 07 수행 시에만 생성 |
 
-실습 종료 후 반드시 **07 — 정리** 모듈을 실행해 모든 리소스를 삭제하세요.
+실습 종료 후 반드시 **08 — 정리** 모듈을 실행해 모든 리소스를 삭제하세요.
 
 ---
 
@@ -114,13 +118,19 @@ AKS 노드 리소스 그룹(`MC_...`) 내부 리소스는 AKS가 자동 관리�
 - [Istio Gateway API — ConfigMap·Annotation customizations](https://learn.microsoft.com/en-us/azure/aks/istio-gateway-api#configmap-customizations) — 06 모듈의 원본 문서
 - [AKS에서 정적 IP로 Load Balancer 사용](https://learn.microsoft.com/en-us/azure/aks/static-ip) — 03 모듈 8절 배경
 
+### 마이그레이션·Azure Front Door (Microsoft Learn) — 07 모듈
+
+- [ingress-nginx에서 Gateway API로 마이그레이션](https://learn.microsoft.com/en-us/azure/aks/app-routing-nginx-to-gateway-api-migration) — 07 모듈의 원본 문서
+- [Azure Front Door를 이용한 Blue/Green 배포](https://learn.microsoft.com/en-us/azure/frontdoor/blue-green-deployment)
+- [Azure Front Door 트래픽 라우팅 방법 (가중치 라우팅)](https://learn.microsoft.com/en-us/azure/frontdoor/routing-methods#weighted-traffic-routing-method)
+
 ### 자격 증명·인증서 (Microsoft Learn)
 
 - [AKS Workload Identity 개요](https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview) — 04 모듈 UAMI·FIC의 동작 원리
 - [Workload Identity Federation (Microsoft Entra)](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation)
 - [AKS Key Vault Secrets Store CSI Driver](https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-driver) — 05 모듈 인증서 동기화 메커니즘
 - [Key Vault 인증서 개요](https://learn.microsoft.com/en-us/azure/key-vault/certificates/about-certificates)
-- [Key Vault soft-delete 개요](https://learn.microsoft.com/en-us/azure/key-vault/general/soft-delete-overview) — 07 모듈 purge가 필요한 이유
+- [Key Vault soft-delete 개요](https://learn.microsoft.com/en-us/azure/key-vault/general/soft-delete-overview) — 08 모듈 purge가 필요한 이유
 
 ### DNS·네트워킹 (Microsoft Learn)
 
