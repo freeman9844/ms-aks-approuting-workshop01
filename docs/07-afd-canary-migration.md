@@ -6,6 +6,8 @@
 
 > **옵션 모듈**: 이 모듈은 선택 사항입니다. 건너뛰고 바로 [08 — 정리](08-cleanup.md)로 이동해도 됩니다.
 
+> **전제 조건**: [03](03-gateway-httproute.md)의 정적 공인 IP 고정과 [05](05-tls-gateway-externaldns.md)의 TLS Gateway 적용(HTTPRoute `hostnames`에 `httpbin.$ZONE_NAME` 포함)이 완료된 상태여야 합니다. 05를 건너뛰었다면 이 모듈의 `httpbin.$ZONE_NAME` 요청이 404를 반환합니다.
+
 기존 운영 환경이 **Azure Front Door(AFD) → ingress-nginx(application routing add-on)** 구조일 때, 무중단으로 **application routing Gateway API**로 이관하는 절차를 실습합니다. 핵심 전략은 두 가지 공식 패턴의 조합입니다.
 
 1. **병렬 데이터 플레인**: ingress-nginx와 Gateway API 구현은 같은 클러스터에서 나란히 동작하며 각자 별도의 LB IP를 가집니다 — [공식 마이그레이션 가이드](https://learn.microsoft.com/azure/aks/app-routing-nginx-to-gateway-api-migration)
@@ -17,8 +19,8 @@
 ```mermaid
 flowchart LR
     C[클라이언트] --> AFD[Azure Front Door<br/>origin group]
-    AFD -- "weight 75 → 50 → 0" --> N[origin-nginx<br/>ingress-nginx LB IP]
-    AFD -- "weight 25 → 50 → 100" --> G[origin-gateway<br/>Gateway 정적 IP]
+    AFD -- "weight 100 → 75 → 50 → 비활성화" --> N[origin-nginx<br/>ingress-nginx LB IP]
+    AFD -- "weight 25 → 50 → 100%" --> G[origin-gateway<br/>Gateway 정적 IP]
     N --> App[httpbin]
     G --> App
 ```
@@ -33,6 +35,7 @@ flowchart LR
 🟢 **실행**
 ```bash
 source ~/.approuting-ws-env
+az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER --overwrite-existing || true
 echo "STATIC_IP=$STATIC_IP  ZONE_NAME=$ZONE_NAME"
 ```
 
@@ -114,6 +117,8 @@ gateway 경로: 200
 
 > **참고**: `az afd` 명령은 `cdn` 확장을 사용합니다. 처음 실행 시 확장이 자동 설치됩니다(preview 경고는 무시해도 됩니다).
 
+> **⚠️ `--additional-latency-in-milliseconds`가 카나리의 성패를 가릅니다**: AFD는 가중치를 적용하기 **전에** 지연 시간 기준으로 origin을 먼저 선별합니다. 이 값이 작으면(예: 기본 50ms) 미세한 지연 차이만으로 한쪽 origin만 선택돼 **가중치가 무시**됩니다. 실측에서도 50ms에서는 트래픽 100%가 nginx로만 향했고, 1000ms로 올린 뒤에야 가중치대로 분배됐습니다. 카나리 목적이라면 두 origin이 항상 같은 지연 버킷에 들어가도록 충분히 큰 값을 설정하세요. ([가중치 라우팅 공식 문서](https://learn.microsoft.com/azure/frontdoor/routing-methods#weighted-traffic-routing-method))
+
 🟢 **실행**
 ```bash
 # 1) AFD Standard 프로필과 엔드포인트 생성
@@ -124,7 +129,7 @@ export AFD_HOST=$(az afd endpoint create --endpoint-name ep-mig-$SUFFIX \
 echo "export AFD_HOST=$AFD_HOST" >> ~/.approuting-ws-env
 echo "AFD_HOST=$AFD_HOST"
 
-# 2) origin group 생성 — additional-latency 값이 카나리의 핵심 (아래 설명 참고)
+# 2) origin group 생성 — additional-latency 값이 카나리의 핵심 (위 설명 참고)
 az afd origin-group create --origin-group-name og-migration \
   --profile-name afd-mig-$SUFFIX --resource-group $RESOURCE_GROUP \
   --probe-request-type GET --probe-protocol Http --probe-interval-in-seconds 30 --probe-path /get \
@@ -152,8 +157,6 @@ echo "AFD 구성 완료"
 AFD_HOST=ep-mig-35448-enh2hcaaf7eehpgd.b02.azurefd.net
 AFD 구성 완료
 ```
-
-> **⚠️ `--additional-latency-in-milliseconds`가 카나리의 성패를 가릅니다**: AFD는 가중치를 적용하기 **전에** 지연 시간 기준으로 origin을 먼저 선별합니다. 이 값이 작으면(예: 기본 50ms) 미세한 지연 차이만으로 한쪽 origin만 선택돼 **가중치가 무시**됩니다. 이 리허설에서도 50ms에서는 트래픽 100%가 nginx로만 향했고, 1000ms로 올린 뒤에야 가중치대로 분배됐습니다. 카나리 목적이라면 두 origin이 항상 같은 지연 버킷에 들어가도록 충분히 큰 값을 설정하세요. ([가중치 라우팅 공식 문서](https://learn.microsoft.com/azure/frontdoor/routing-methods#weighted-traffic-routing-method))
 
 새로 만든 AFD 엔드포인트는 전 세계 엣지로 전파되기까지 **약 10분** 걸립니다. 전파 전에는 AFD 기본 404 페이지가 반환됩니다.
 
@@ -235,22 +238,23 @@ origin-gateway  20.196.222.78   25        Enabled
 🟢 **실행**
 ```bash
 sleep 600
-# 40회 요청해 데이터 플레인별 응답 수 집계
-NGINX=0; GW=0
+# 40회 요청해 데이터 플레인별 응답 수 집계 (unknown = 404/503 등 분류 불가 응답)
+NGINX=0; GW=0; UNKNOWN=0
 for i in $(seq 1 40); do
   BODY=$(curl -s --max-time 10 "http://$AFD_HOST/get?q=$RANDOM$i")
-  echo "$BODY" | grep -q 'X-Envoy-Attempt-Count' && GW=$((GW+1)) \
-    || { echo "$BODY" | grep -q 'X-Real-Ip' && NGINX=$((NGINX+1)); }
+  if echo "$BODY" | grep -q 'X-Envoy-Attempt-Count'; then GW=$((GW+1))
+  elif echo "$BODY" | grep -q 'X-Real-Ip'; then NGINX=$((NGINX+1))
+  else UNKNOWN=$((UNKNOWN+1)); fi
 done
-echo "nginx=$NGINX gateway=$GW"
+echo "nginx=$NGINX gateway=$GW unknown=$UNKNOWN"
 ```
 
 📋 **예상 출력**
 ```
-nginx=30 gateway=10
+nginx=30 gateway=10 unknown=0
 ```
 
-40회 중 약 10회(25%)가 Gateway로 흘렀습니다. 이 시점부터 실제 사용자 트래픽 일부가 새 데이터 플레인을 검증하고 있는 것입니다.
+40회 중 약 10회(25%)가 Gateway로 흘렀습니다. 이 시점부터 실제 사용자 트래픽 일부가 새 데이터 플레인을 검증하고 있는 것입니다. `unknown`이 0이 아니면 AFD가 오류 페이지(404/503)를 반환한 것이므로 트러블슈팅 표를 확인하세요.
 
 > **참고**: 낮은 RPS에서는 AFD POP의 분산 특성상 가중치 비율이 정확히 지켜지지 않을 수 있습니다(공식 문서 명시). 측정 횟수를 늘리면 비율이 수렴합니다.
 
@@ -269,18 +273,19 @@ az afd origin update --origin-name origin-gateway --origin-group-name og-migrati
 
 # 전파 대기 후 재측정
 sleep 600
-NGINX=0; GW=0
+NGINX=0; GW=0; UNKNOWN=0
 for i in $(seq 1 60); do
   BODY=$(curl -s --max-time 10 "http://$AFD_HOST/get?q=$RANDOM$i")
-  echo "$BODY" | grep -q 'X-Envoy-Attempt-Count' && GW=$((GW+1)) \
-    || { echo "$BODY" | grep -q 'X-Real-Ip' && NGINX=$((NGINX+1)); }
+  if echo "$BODY" | grep -q 'X-Envoy-Attempt-Count'; then GW=$((GW+1))
+  elif echo "$BODY" | grep -q 'X-Real-Ip'; then NGINX=$((NGINX+1))
+  else UNKNOWN=$((UNKNOWN+1)); fi
 done
-echo "nginx=$NGINX gateway=$GW"
+echo "nginx=$NGINX gateway=$GW unknown=$UNKNOWN"
 ```
 
 📋 **예상 출력**
 ```
-nginx=35 gateway=25
+nginx=35 gateway=25 unknown=0
 ```
 
 ---
@@ -297,18 +302,19 @@ az afd origin update --origin-name origin-nginx --origin-group-name og-migration
 
 # 전파 대기 (비활성화 반영까지 10–20분 걸릴 수 있음) 후 확인
 sleep 900
-NGINX=0; GW=0
+NGINX=0; GW=0; UNKNOWN=0
 for i in $(seq 1 40); do
   BODY=$(curl -s --max-time 10 "http://$AFD_HOST/get?q=$RANDOM$i")
-  echo "$BODY" | grep -q 'X-Envoy-Attempt-Count' && GW=$((GW+1)) \
-    || { echo "$BODY" | grep -q 'X-Real-Ip' && NGINX=$((NGINX+1)); }
+  if echo "$BODY" | grep -q 'X-Envoy-Attempt-Count'; then GW=$((GW+1))
+  elif echo "$BODY" | grep -q 'X-Real-Ip'; then NGINX=$((NGINX+1))
+  else UNKNOWN=$((UNKNOWN+1)); fi
 done
-echo "nginx=$NGINX gateway=$GW"
+echo "nginx=$NGINX gateway=$GW unknown=$UNKNOWN"
 ```
 
 📋 **예상 출력**
 ```
-nginx=0 gateway=40
+nginx=0 gateway=40 unknown=0
 ```
 
 트래픽 100%가 Gateway API 데이터 플레인으로 이관됐습니다.
@@ -372,7 +378,7 @@ AFD 경유: 200
 
 | 증상 | 원인 | 해결 방법 |
 |------|------|-----------|
-| 가중치를 설정해도 트래픽 100%가 한 origin으로만 감 | origin group의 `additional-latency-in-milliseconds`가 작아(기본 50ms) 지연 선별 단계에서 한 origin만 선택됨 — 가중치는 같은 지연 버킷 안에서만 적용 | `az afd origin-group update ... --additional-latency-in-milliseconds 1000`으로 상향합니다. 이 리허설에서 실측으로 확인된 동작입니다 |
+| 가중치를 설정해도 트래픽 100%가 한 origin으로만 감 | origin group의 `additional-latency-in-milliseconds`가 작아(기본 50ms) 지연 선별 단계에서 한 origin만 선택됨 — 가중치는 같은 지연 버킷 안에서만 적용 | `az afd origin-group update ... --additional-latency-in-milliseconds 1000`으로 상향합니다. 실측으로 확인된 동작입니다 |
 | AFD 엔드포인트가 계속 404를 반환 | 신규 엔드포인트/라우트의 엣지 전파 전 (약 10분 소요) | 1분 간격으로 재시도합니다. 10분 이상 지속되면 `az afd route show`로 라우트의 `--link-to-default-domain Enabled` 여부를 확인합니다 |
 | 가중치·비활성화 변경이 반영되지 않음 | AFD 구성 변경의 글로벌 전파에 5–20분 소요 | 충분히 대기 후 재측정합니다. 컷오버(비활성화)는 특히 오래 걸릴 수 있습니다(실측 최대 20분) |
 | 측정 비율이 설정 가중치와 다름 | 낮은 RPS에서는 POP 분산 특성상 비율이 근사치로만 수렴 (공식 문서 명시) | 측정 횟수를 60회 이상으로 늘리거나, 정확한 비율 검증이 필요하면 부하 도구(hey, ab 등)로 RPS를 높입니다 |
