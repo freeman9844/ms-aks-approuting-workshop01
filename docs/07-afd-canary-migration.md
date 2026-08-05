@@ -123,7 +123,7 @@ AFD 기본 도메인(`*.azurefd.net`)에는 Microsoft 관리 인증서가 자동
 
 > **참고**: `az afd` 명령은 `cdn` 확장을 사용합니다. 처음 실행 시 확장이 자동 설치됩니다(preview 경고는 무시해도 됩니다).
 
-> **⚠️ `--additional-latency-in-milliseconds`가 카나리의 성패를 가릅니다**: AFD는 가중치를 적용하기 **전에** 지연 시간 기준으로 origin을 먼저 선별합니다. 이 값이 작으면(예: 기본 50ms) 미세한 지연 차이만으로 한쪽 origin만 선택돼 **가중치가 무시**됩니다. 실측에서도 50ms에서는 트래픽 100%가 nginx로만 향했고, 1000ms로 올린 뒤에야 가중치대로 분배됐습니다. 카나리 목적이라면 두 origin이 항상 같은 지연 버킷에 들어가도록 충분히 큰 값을 설정하세요. ([가중치 라우팅 공식 문서](https://learn.microsoft.com/azure/frontdoor/routing-methods#weighted-traffic-routing-method))
+> **⚠️ `--additional-latency-in-milliseconds`가 카나리의 성패를 가릅니다**: AFD는 가중치를 적용하기 **전에** 각 POP의 health probe로 측정한 origin 지연 시간을 기준으로 후보를 선별하고, 가장 빠른 origin과 이 설정값 이내에 있는 origin 사이에서만 가중치를 적용합니다. 두 origin이 같은 AKS 클러스터를 사용하더라도 경로는 서로 다릅니다. `origin-nginx`와 `origin-gateway`는 각각 별도의 공인 IP·Azure Load Balancer frontend·Service·프록시 Pod(nginx 또는 Envoy)를 거치므로, LB backend 선택·Pod 배치 노드·TCP 연결·일시적 부하에 따라 probe 왕복 시간이 달라질 수 있습니다. 또한 신규 origin의 health 판정이나 AFD 구성 전파가 끝나지 않은 동안에도 한 origin만 선택될 수 있습니다. 실측에서는 50ms 설정에서 트래픽이 nginx로만 향했고, 1000ms로 올린 뒤 두 origin이 동일 후보군에 포함되어 가중치 분배를 관찰할 수 있었습니다. 이 결과를 프록시 자체의 성능 차이로 해석하지 말고, 카나리 실습에서는 두 origin을 같은 후보군에 포함하기 위한 충분한 latency sensitivity를 설정하세요. ([가중치 라우팅 공식 문서](https://learn.microsoft.com/azure/frontdoor/routing-methods#weighted-traffic-routing-method))
 
 🟢 **실행**
 ```bash
@@ -419,7 +419,7 @@ AFD HTTPS 경유: 200
 
 | 증상 | 원인 | 해결 방법 |
 |------|------|-----------|
-| 가중치를 설정해도 트래픽 100%가 한 origin으로만 감 | origin group의 `additional-latency-in-milliseconds`가 작아(기본 50ms) 지연 선별 단계에서 한 origin만 선택됨 — 가중치는 같은 지연 버킷 안에서만 적용 | `az afd origin-group update ... --additional-latency-in-milliseconds 1000`으로 상향합니다. 실측으로 확인된 동작입니다 |
+| 가중치를 설정해도 트래픽 100%가 한 origin으로만 감 | 별도 공인 IP·LB·Service·프록시 경로의 probe 지연 차이로 한 origin이 latency 후보군에서 제외됐거나, 신규 origin의 health 판정·구성 전파가 아직 끝나지 않음 — 가중치는 동일 후보군 안에서만 적용 | 먼저 `az afd origin show ... --query deploymentStatus`와 health probe 응답을 확인합니다. 모두 정상인데도 한쪽만 선택되면 `az afd origin-group update ... --additional-latency-in-milliseconds 1000`으로 두 origin이 같은 후보군에 포함되도록 상향합니다 |
 | AFD 엔드포인트가 계속 404를 반환 | 신규 엔드포인트/라우트의 엣지 전파 전 (실측 10–25분 소요) | 1분 간격으로 재시도합니다. `az afd route show`에서 `deploymentStatus`가 `NotStarted`면 아직 전파 전이니 그대로 대기합니다. 30분 이상 지속되면 라우트의 `--link-to-default-domain Enabled` 여부를 확인합니다 |
 | 가중치·비활성화 변경이 반영되지 않음 | AFD 구성 변경의 글로벌 전파에 5–30분 이상 소요될 수 있음 (날에 따라 편차 큼) | `az afd origin show ... --query deploymentStatus`가 `NotStarted`면 전파 전입니다. 충분히 대기 후 측정 루프만 재실행합니다. 컷오버(비활성화)는 특히 오래 걸릴 수 있습니다 |
 | 측정 비율이 설정 가중치와 다름 | 낮은 RPS에서는 POP 분산 특성상 비율이 근사치로만 수렴 (공식 문서 명시) | 측정 횟수를 60회 이상으로 늘리거나, 정확한 비율 검증이 필요하면 부하 도구(hey, ab 등)로 RPS를 높입니다 |
