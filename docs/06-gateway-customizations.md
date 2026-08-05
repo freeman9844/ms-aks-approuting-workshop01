@@ -156,24 +156,11 @@ Gateway의 `spec.infrastructure.annotations`에 지정한 어노테이션은 자
 
 > ⚠️ **이 실습을 수행하면 정적 공인 IP 기반의 외부 접근이 끊어집니다.** 완료 후 바로 [08 — 정리](08-cleanup.md)로 이동하면 되며, 옵션 [07](07-afd-canary-migration.md)을 진행할 계획이라면 07 모듈 상단의 복원 절차를 따르세요.
 
-### 3.1 내부 LB 어노테이션 추가 — 정적 공인 IP와의 충돌 관찰
+### 3.1 내부 LB 전환 — 어노테이션 추가와 spec.addresses 제거
 
-먼저 현재 Gateway(정적 공인 IP가 `spec.addresses`에 고정된 상태)에 내부 LB 어노테이션만 추가해 봅니다.
+내부 LB 어노테이션을 추가하고, 03 모듈에서 고정한 정적 **공인** IP(`spec.addresses`)를 제거합니다. 내부 LB는 노드 서브넷(`10.224.0.0/16`)의 사설 IP만 프런트엔드로 사용할 수 있으므로, 공인 IP 고정을 제거해야 노드 서브넷에서 사설 IP를 자동 할당받습니다.
 
-🟢 **실행**
-```bash
-# 내부 LB 어노테이션 추가 (spec.addresses의 공인 IP는 아직 그대로)
-kubectl patch gateway httpbin-gateway -n workshop --type merge \
-  -p '{"spec":{"infrastructure":{"annotations":{"service.beta.kubernetes.io/azure-load-balancer-internal":"true"}}}}'
-
-# 약 30초 후 Service 이벤트 확인
-sleep 30
-kubectl get events -n workshop \
-  --field-selector involvedObject.name=httpbin-gateway-approuting-istio,reason=SyncLoadBalancerFailed \
-  -o jsonpath='{.items[-1].message}' | tail -c 300; echo
-```
-
-👁️ **예시** — patch 적용 후 Gateway 전체 YAML은 다음과 같습니다 (05 모듈의 `gateway-tls.yaml`에 `infrastructure.annotations`가 추가된 형태 — `spec.addresses`의 공인 IP와 2절의 `parametersRef`는 그대로).
+👁️ **예시** — patch 적용 후 Gateway 전체 YAML은 다음과 같습니다 (05 모듈의 `gateway-tls.yaml`에서 `spec.addresses`가 빠지고 `infrastructure.annotations`가 추가된 형태 — 2절의 `parametersRef`는 그대로).
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
@@ -182,12 +169,9 @@ metadata:
   namespace: workshop
 spec:
   gatewayClassName: approuting-istio
-  addresses:
-  - type: IPAddress
-    value: 20.196.222.78   # 03 모듈에서 고정한 정적 공인 IP
   infrastructure:
     annotations:
-      service.beta.kubernetes.io/azure-load-balancer-internal: "true"   # 이번에 추가된 어노테이션
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"   # 이번에 추가되는 어노테이션
     parametersRef:          # 2절에서 추가한 Gateway별 커스터마이징
       group: ""
       kind: ConfigMap
@@ -213,25 +197,12 @@ spec:
         from: Same
 ```
 
-📋 **예상 출력**
-```
-{
-  "error": {
-    "code": "PrivateIPAddressNotInSubnet",
-    "message": "Private static IP address 20.214.170.40 does not belong to the range of subnet prefix 10.224.0.0/16.",
-    "details": []
-  }
-}
-```
-
-의도된 실패입니다 — 내부 LB는 노드 서브넷(`10.224.0.0/16`)의 사설 IP만 사용할 수 있는데, `spec.addresses`에 고정된 **공인** IP를 사설 프런트엔드로 쓰려고 해서 Azure가 거부한 것입니다. 어노테이션은 이렇게 Service를 거쳐 Azure LB 구성까지 그대로 전달된다는 것을 확인할 수 있습니다.
-
-### 3.2 spec.addresses 제거 — 내부 IP 자동 할당
-
-공인 IP 고정을 제거하면 내부 LB가 노드 서브넷에서 사설 IP를 자동 할당받습니다.
-
 🟢 **실행**
 ```bash
+# 내부 LB 어노테이션 추가
+kubectl patch gateway httpbin-gateway -n workshop --type merge \
+  -p '{"spec":{"infrastructure":{"annotations":{"service.beta.kubernetes.io/azure-load-balancer-internal":"true"}}}}'
+
 # 정적 공인 IP 고정 제거
 kubectl patch gateway httpbin-gateway -n workshop --type json \
   -p '[{"op":"remove","path":"/spec/addresses"}]'
@@ -250,9 +221,9 @@ NAME              CLASS              ADDRESS      PROGRAMMED   AGE
 httpbin-gateway   approuting-istio   10.224.0.6   True         65m
 ```
 
-`EXTERNAL-IP`가 공인 IP 대신 노드 서브넷의 **사설 IP**(`10.224.x.x`)로 바뀌었습니다.
+`EXTERNAL-IP`가 공인 IP 대신 노드 서브넷의 **사설 IP**(`10.224.x.x`)로 바뀌었습니다. 어노테이션이 Service를 거쳐 Azure LB 구성까지 그대로 전달된 것입니다.
 
-### 3.3 접근 경로 검증 — 외부 단절, 내부 정상
+### 3.2 접근 경로 검증 — 외부 단절, 내부 정상
 
 🟢 **실행**
 ```bash
@@ -274,7 +245,7 @@ pod "curl-test" deleted from workshop namespace
 
 외부 요청은 타임아웃(`000`)되고, VNet 내부(파드)에서는 정상 응답(`200`)합니다. 게이트웨이가 내부 전용으로 전환된 것입니다.
 
-### 3.4 참고 — public Gateway와 private Gateway 병행 운영
+### 3.3 참고 — public Gateway와 private Gateway 병행 운영
 
 실 운영에서는 기존 public Gateway를 내부용으로 전환하는 대신, **별도의 private Gateway를 하나 더 두는** 구성이 일반적입니다. Gateway마다 독립적인 LoadBalancer Service·Deployment·HPA·PDB가 생성되므로(`<gateway 이름>-approuting-istio`) 두 Gateway는 서로 간섭하지 않으며, 같은 백엔드를 HTTPRoute의 `parentRefs`로 양쪽에 연결할 수도 있습니다.
 
@@ -330,7 +301,7 @@ spec:
 | `kubectl patch` 시 `admission webhook "istio-kube-gateway-validating-webhook.azmk8s.io" denied the request: ... spec.minReplicas must be >= 2` 오류 | ConfigMap의 HPA `minReplicas`를 2 미만으로 지정함 — 허용 목록 검증에 의해 거부됨 | ConfigMap의 `minReplicas`를 2 이상으로 수정한 뒤 다시 patch합니다 |
 | `istio-gateway-class-defaults` ConfigMap이 보이지 않음 | 클러스터 생성 직후에는 add-on이 ConfigMap을 배포하기까지 최대 5분이 걸릴 수 있음 | 수 분 대기 후 `kubectl get configmap -n aks-istio-system`으로 다시 확인합니다 |
 | parametersRef 적용 후에도 HPA 값이 바뀌지 않음 | 반영에 수십 초가 걸리거나, ConfigMap이 Gateway와 다른 네임스페이스에 있음 | 30초–1분 대기 후 재확인하고, ConfigMap이 `workshop` 네임스페이스에 있는지 `kubectl get configmap gw-options -n workshop`으로 확인합니다 |
-| 3.2 수행 후에도 `EXTERNAL-IP`가 공인 IP로 남아 있음 | Azure LB 프런트엔드 재구성에 시간이 걸림 (내부 LB `kubernetes-internal` 생성 포함) | 1–2분 대기 후 `kubectl get svc httpbin-gateway-approuting-istio -n workshop`으로 재확인합니다. `kubectl get events -n workshop --sort-by=.lastTimestamp`로 `EnsuringLoadBalancer` 진행 여부를 볼 수 있습니다 |
+| 3.1 수행 후에도 `EXTERNAL-IP`가 공인 IP로 남아 있음 | Azure LB 프런트엔드 재구성에 시간이 걸림 (내부 LB `kubernetes-internal` 생성 포함) | 1–2분 대기 후 `kubectl get svc httpbin-gateway-approuting-istio -n workshop`으로 재확인합니다. `kubectl get events -n workshop --sort-by=.lastTimestamp`로 `EnsuringLoadBalancer` 진행 여부를 볼 수 있습니다 |
 
 ---
 
