@@ -380,4 +380,4 @@ AFD 경유: 200
 
 ---
 
-[← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) | 다음: [08 — 정리](08-cleanup.md)
+[← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) 또는 [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | 다음: [08 — 정리](08-cleanup.md)
