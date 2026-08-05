@@ -8,6 +8,8 @@
 
 > **전제 조건**: [03](03-gateway-httproute.md)의 정적 공인 IP 고정과 [05](05-tls-gateway-externaldns.md)의 TLS Gateway 적용(HTTPRoute `hostnames`에 `httpbin.$ZONE_NAME` 포함)이 완료된 상태여야 합니다. 05를 건너뛰었다면 이 모듈의 `httpbin.$ZONE_NAME` 요청이 404를 반환합니다.
 
+> **이 모듈에서 사용하는 Gateway API 경로**: 새 Gateway를 만들지 않고 03·05 모듈에서 구성한 Istio 기반 Application Routing Gateway API를 그대로 사용합니다. `GatewayClass`는 `approuting-istio`, Gateway는 `httpbin-gateway`, HTTPRoute는 `httpbin`입니다. AFD의 `origin-gateway`는 이 Gateway의 정적 공인 IP(`$STATIC_IP`)와 **HTTP 80 리스너**를 사용합니다. 클라이언트 HTTPS는 AFD에서 종료되므로, 05에서 구성한 Gateway의 HTTPS 443 리스너는 AFD origin 경로에 사용하지 않습니다.
+
 기존 운영 환경이 **Azure Front Door(AFD) → ingress-nginx(application routing add-on)** 구조일 때, 무중단으로 **application routing Gateway API**로 이관하는 절차를 실습합니다. 핵심 전략은 두 가지 공식 패턴의 조합입니다.
 
 1. **병렬 데이터 플레인**: ingress-nginx와 Gateway API 구현은 같은 클러스터에서 나란히 동작하며 각자 별도의 LB IP를 가집니다 — [공식 마이그레이션 가이드](https://learn.microsoft.com/azure/aks/app-routing-nginx-to-gateway-api-migration)
@@ -117,7 +119,7 @@ gateway 경로: 200
 
 "기존 환경"의 AFD를 만듭니다. profile(Standard) → endpoint → origin group → origin(nginx IP) → route 순서입니다.
 
-AFD 기본 도메인(`*.azurefd.net`)에는 Microsoft 관리 인증서가 자동 적용됩니다. 클라이언트의 HTTPS 연결은 AFD에서 종료하고, `--forwarding-protocol HttpOnly`로 AKS origin에는 HTTP로 전달합니다. 즉, 인증서와 TLS 처리는 엣지에 집중하고 두 Kubernetes 데이터 플레인은 동일한 HTTP origin 조건으로 비교합니다.
+AFD 기본 도메인(`*.azurefd.net`)에는 Microsoft 관리 인증서가 자동 적용됩니다. 클라이언트의 HTTPS 연결은 AFD에서 종료하고, `--forwarding-protocol HttpOnly`로 ingress-nginx와 `approuting-istio` Gateway의 HTTP 80 리스너에 전달합니다. 즉, 인증서와 TLS 처리는 엣지에 집중하고 두 Kubernetes 데이터 플레인은 동일한 HTTP origin 조건으로 비교합니다.
 
 > **참고**: `az afd` 명령은 `cdn` 확장을 사용합니다. 처음 실행 시 확장이 자동 설치됩니다(preview 경고는 무시해도 됩니다).
 
