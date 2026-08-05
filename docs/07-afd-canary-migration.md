@@ -11,7 +11,7 @@
 기존 운영 환경이 **Azure Front Door(AFD) → ingress-nginx(application routing add-on)** 구조일 때, 무중단으로 **application routing Gateway API**로 이관하는 절차를 실습합니다. 핵심 전략은 두 가지 공식 패턴의 조합입니다.
 
 1. **병렬 데이터 플레인**: ingress-nginx와 Gateway API 구현은 같은 클러스터에서 나란히 동작하며 각자 별도의 LB IP를 가집니다 — [공식 마이그레이션 가이드](https://learn.microsoft.com/azure/aks/app-routing-nginx-to-gateway-api-migration)
-2. **AFD 가중치 카나리**: AFD origin group에 두 IP를 origin으로 등록하고 가중치를 점진 조정해 트래픽을 이관합니다 — [AFD blue/green 배포](https://learn.microsoft.com/azure/frontdoor/blue-green-deployment)
+2. **AFD TLS offloading + 가중치 카나리**: 클라이언트 HTTPS는 AFD에서 종료하고 origin에는 HTTP로 전달합니다. 같은 origin group에 두 IP를 등록하고 가중치를 점진 조정해 트래픽을 이관합니다 — [AFD blue/green 배포](https://learn.microsoft.com/azure/frontdoor/blue-green-deployment)
 
 > **배경 — 왜 마이그레이션인가**: Kubernetes SIG Network가 [Ingress NGINX 프로젝트 은퇴](https://www.kubernetes.dev/blog/2025/11/12/ingress-nginx-retirement/)(2026년 3월 유지보수 종료)를 발표했고, application routing add-on의 NGINX에 대한 Microsoft 보안 패치도 2026년 11월에 종료됩니다. AKS의 공식 후속 경로가 이 워크샵에서 사용해 온 application routing Gateway API 구현입니다.
 
@@ -113,9 +113,11 @@ gateway 경로: 200
 
 ---
 
-## 2. Azure Front Door 구성 — 기존 nginx origin
+## 2. Azure Front Door 구성 — TLS offloading과 기존 nginx origin
 
 "기존 환경"의 AFD를 만듭니다. profile(Standard) → endpoint → origin group → origin(nginx IP) → route 순서입니다.
+
+AFD 기본 도메인(`*.azurefd.net`)에는 Microsoft 관리 인증서가 자동 적용됩니다. 클라이언트의 HTTPS 연결은 AFD에서 종료하고, `--forwarding-protocol HttpOnly`로 AKS origin에는 HTTP로 전달합니다. 즉, 인증서와 TLS 처리는 엣지에 집중하고 두 Kubernetes 데이터 플레인은 동일한 HTTP origin 조건으로 비교합니다.
 
 > **참고**: `az afd` 명령은 `cdn` 확장을 사용합니다. 처음 실행 시 확장이 자동 설치됩니다(preview 경고는 무시해도 됩니다).
 
@@ -149,7 +151,7 @@ az afd origin create --origin-name origin-nginx --origin-group-name og-migration
 az afd route create --route-name route-httpbin --profile-name afd-mig-$SUFFIX \
   --resource-group $RESOURCE_GROUP --endpoint-name ep-mig-$SUFFIX \
   --origin-group og-migration --supported-protocols Http Https \
-  --forwarding-protocol HttpOnly --https-redirect Disabled \
+  --forwarding-protocol HttpOnly --https-redirect Enabled \
   --link-to-default-domain Enabled -o none
 echo "AFD 구성 완료"
 ```
@@ -166,7 +168,7 @@ AFD 구성 완료
 ```bash
 # 200이 나올 때까지 1분 간격으로 확인 (10–25분 소요)
 for i in $(seq 1 30); do
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 http://$AFD_HOST/get)
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 https://$AFD_HOST/get)
   echo "$(date +%H:%M:%S) $CODE"
   [ "$CODE" = "200" ] && break
   sleep 60
@@ -182,6 +184,37 @@ done
 ```
 
 > 200 도달까지 이번 실측에서는 각각 약 9분·25분이 걸렸습니다. 편차가 크므로 404가 계속 나와도 30분까지는 그대로 기다리세요.
+
+### 2.1 TLS offloading 확인
+
+HTTP 요청은 HTTPS로 리디렉션되고, HTTPS 요청은 AFD 관리 인증서로 처리됩니다. origin에는 `HttpOnly`로 전달되므로 httpbin 응답의 URL은 `http://`로 표시됩니다.
+
+🟢 **실행**
+```bash
+# HTTP → HTTPS 리디렉션
+curl -s -o /dev/null -w "HTTP: %{http_code} → %{redirect_url}\n" \
+  --max-time 15 http://$AFD_HOST/get
+
+# AFD에서 TLS 종료 후 정상 응답
+curl -s -o /dev/null -w "HTTPS: %{http_code}\n" \
+  --max-time 15 https://$AFD_HOST/get
+
+# AFD 기본 도메인의 Microsoft 관리 인증서 확인
+echo | openssl s_client -connect $AFD_HOST:443 -servername $AFD_HOST 2>/dev/null \
+  | openssl x509 -noout -subject -issuer
+
+# origin에는 HTTP로 전달되는지 확인
+curl -s --max-time 15 https://$AFD_HOST/get | grep '"url"'
+```
+
+📋 **예상 출력**
+```
+HTTP: 307 → https://ep-mig-35448-enh2hcaaf7eehpgd.b02.azurefd.net/get
+HTTPS: 200
+subject=C = US, ST = WA, L = Redmond, O = Microsoft Corporation, CN = *.azurefd.net
+issuer=C = US, O = Microsoft Corporation, CN = Microsoft TLS G2 ECC CA OCSP 02
+  "url": "http://ep-mig-35448-enh2hcaaf7eehpgd.b02.azurefd.net/get"
+```
 
 이제 클라이언트 트래픽이 **AFD → origin-nginx(ingress-nginx) → httpbin** 경로로 흐릅니다. 기존 운영 환경이 완성됐습니다.
 
@@ -245,7 +278,7 @@ sleep 600
 # 40회 요청해 데이터 플레인별 응답 수 집계 (unknown = 404/503 등 분류 불가 응답)
 NGINX=0; GW=0; UNKNOWN=0
 for i in $(seq 1 40); do
-  BODY=$(curl -s --max-time 10 "http://$AFD_HOST/get?q=$RANDOM$i")
+  BODY=$(curl -s --max-time 10 "https://$AFD_HOST/get?q=$RANDOM$i")
   if echo "$BODY" | grep -q 'X-Envoy-Attempt-Count'; then GW=$((GW+1))
   elif echo "$BODY" | grep -q 'X-Real-Ip'; then NGINX=$((NGINX+1))
   else UNKNOWN=$((UNKNOWN+1)); fi
@@ -281,7 +314,7 @@ az afd origin update --origin-name origin-gateway --origin-group-name og-migrati
 sleep 600
 NGINX=0; GW=0; UNKNOWN=0
 for i in $(seq 1 60); do
-  BODY=$(curl -s --max-time 10 "http://$AFD_HOST/get?q=$RANDOM$i")
+  BODY=$(curl -s --max-time 10 "https://$AFD_HOST/get?q=$RANDOM$i")
   if echo "$BODY" | grep -q 'X-Envoy-Attempt-Count'; then GW=$((GW+1))
   elif echo "$BODY" | grep -q 'X-Real-Ip'; then NGINX=$((NGINX+1))
   else UNKNOWN=$((UNKNOWN+1)); fi
@@ -310,7 +343,7 @@ az afd origin update --origin-name origin-nginx --origin-group-name og-migration
 sleep 900
 NGINX=0; GW=0; UNKNOWN=0
 for i in $(seq 1 40); do
-  BODY=$(curl -s --max-time 10 "http://$AFD_HOST/get?q=$RANDOM$i")
+  BODY=$(curl -s --max-time 10 "https://$AFD_HOST/get?q=$RANDOM$i")
   if echo "$BODY" | grep -q 'X-Envoy-Attempt-Count'; then GW=$((GW+1))
   elif echo "$BODY" | grep -q 'X-Real-Ip'; then NGINX=$((NGINX+1))
   else UNKNOWN=$((UNKNOWN+1)); fi
@@ -363,7 +396,7 @@ kubectl delete ingress httpbin -n $APP_NAMESPACE
 # 4) nginx 데이터 플레인이 사라졌고, AFD 경유 트래픽은 정상인지 최종 확인
 sleep 30
 kubectl get svc,deploy -n app-routing-system
-curl -s -o /dev/null -w "AFD 경유: %{http_code}\n" --max-time 15 http://$AFD_HOST/get
+curl -s -o /dev/null -w "AFD HTTPS 경유: %{http_code}\n" --max-time 15 https://$AFD_HOST/get
 ```
 
 📋 **예상 출력**
@@ -371,12 +404,12 @@ curl -s -o /dev/null -w "AFD 경유: %{http_code}\n" --max-time 15 http://$AFD_H
 nginxingresscontroller.approuting.kubernetes.azure.com "default" deleted
 ingress.networking.k8s.io "httpbin" deleted from workshop namespace
 No resources found in app-routing-system namespace.
-AFD 경유: 200
+AFD HTTPS 경유: 200
 ```
 
 마이그레이션 완료 — ingress-nginx는 사라졌고, AFD는 Gateway API 데이터 플레인만 바라봅니다. AFD 리소스(`afd-mig-$SUFFIX`)는 `$RESOURCE_GROUP`에 있으므로 [08 — 정리](08-cleanup.md)의 RG 삭제로 함께 제거됩니다.
 
-> **실 운영과의 차이**: 이 실습은 AFD 엔드포인트 기본 도메인(`*.azurefd.net`)과 HTTP를 사용했습니다. 실 운영에서는 커스텀 도메인 + HTTPS(managed TLS), 그리고 [공식 마이그레이션 가이드](https://learn.microsoft.com/azure/aks/app-routing-nginx-to-gateway-api-migration)의 체크리스트(모든 hostname·경로 검증, 인증서 체인, 지속 부하 관측)를 컷오버 전에 수행하세요.
+> **실 운영과의 차이**: 이 실습은 AFD 기본 도메인(`*.azurefd.net`)의 Microsoft 관리 인증서로 TLS offloading을 확인했습니다. 실 운영에서는 커스텀 도메인을 AFD에 연결하고 managed TLS 인증서를 발급한 뒤, [공식 마이그레이션 가이드](https://learn.microsoft.com/azure/aks/app-routing-nginx-to-gateway-api-migration)의 체크리스트(모든 hostname·경로 검증, 인증서 체인, 지속 부하 관측)를 컷오버 전에 수행하세요. 보안 요구사항상 origin 구간도 암호화해야 한다면 `HttpsOnly`와 유효한 origin 인증서를 사용해 end-to-end TLS로 구성합니다.
 
 ---
 

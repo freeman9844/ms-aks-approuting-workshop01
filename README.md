@@ -32,7 +32,7 @@ flowchart LR
 4. Azure DNS zone·Key Vault 인증서·UAMI·페더레이션 자격 증명(FIC)으로 operator 통합 인프라를 구성한다.
 5. Gateway annotation 기반 TLS 종료와 정적 IP 기반 A 레코드 등록을 확인한다. (옵션: ClusterExternalDNS를 통한 A 레코드 자동 발행)
 6. (옵션) 자동 생성되는 Gateway 인프라(Service·Deployment·HPA·PDB)를 ConfigMap으로 재정의하고, Annotation으로 내부 Load Balancer 전환을 수행한다.
-7. (옵션) ingress-nginx와 Gateway API 데이터 플레인을 병렬 구성하고, Azure Front Door 가중치 라우팅으로 카나리 마이그레이션을 수행한다.
+7. (옵션) Azure Front Door에서 TLS offloading을 구성하고, ingress-nginx와 Gateway API 데이터 플레인을 병렬 구성해 가중치 카나리 마이그레이션을 수행한다.
 8. 실습에 사용한 모든 Azure 리소스를 완전히 정리한다.
 
 ---
@@ -58,7 +58,7 @@ flowchart LR
 | 04 | [DNS·TLS 인프라 준비](docs/04-dns-tls-infra.md) | DNS zone·Key Vault·UAMI·FIC 생성 및 RBAC 구성 |
 | 05 | [TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) | TLS Gateway 적용, 정적 IP로 A 레코드 등록 (옵션: ClusterExternalDNS 자동 발행) |
 | 06 | [Gateway 인프라 커스터마이징 (옵션)](docs/06-gateway-customizations.md) | ConfigMap으로 HPA·Deployment 재정의, Annotation으로 내부 LB 전환 |
-| 07 | [AFD 카나리 마이그레이션 (옵션)](docs/07-afd-canary-migration.md) | ingress-nginx ∥ Gateway API 병렬 구성, Azure Front Door 가중치 카나리로 무중단 이관 |
+| 07 | [AFD 카나리 마이그레이션 (옵션)](docs/07-afd-canary-migration.md) | AFD TLS offloading, ingress-nginx ∥ Gateway API 병렬 구성, 가중치 카나리로 무중단 이관 |
 | 08 | [정리](docs/08-cleanup.md) | 전체 Azure 리소스 삭제 |
 
 ---
