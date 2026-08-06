@@ -360,6 +360,10 @@ nginx=0 gateway=40 unknown=0
 
 트래픽 100%가 Gateway API 데이터 플레인으로 이관됐습니다.
 
+컷오버 상태는 Azure Portal에서도 확인할 수 있습니다. **Load balancing and content delivery → Azure Front Door → `afd-mig-$SUFFIX` → Settings → Origin groups → `og-migration`**으로 이동합니다. origin 목록에서 기존 ingress-nginx IP는 `Disabled`, Gateway 정적 IP(`$STATIC_IP`)는 `Enabled`로 표시되고, **Latency sensitivity (in milliseconds)** 값이 `1000`이면 정상입니다.
+
+![Azure Portal — AFD og-migration origin group에서 기존 ingress-nginx origin은 Disabled, Gateway origin은 Enabled로 표시된 컷오버 상태](images/07-afd-origin-group-cutover-portal.png)
+
 ---
 
 ## 7. 롤백 경로 (참고)
