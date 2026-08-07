@@ -335,6 +335,10 @@ origin-nginx    20.196.224.94   75        Enabled
 origin-gateway  20.196.222.78   25        Enabled
 ```
 
+카나리 origin 구성은 Azure Portal에서도 확인할 수 있습니다. **Load balancing and content delivery → Azure Front Door → `afd-mig-$SUFFIX` → Settings → Origin groups → `og-migration`**으로 이동합니다. 두 origin이 모두 `Enabled`이고, 기존 ingress-nginx IP의 Weight는 `75`, Gateway 정적 IP(`$STATIC_IP`)의 Weight는 `25`로 표시되며 **Latency sensitivity (in milliseconds)** 값이 `1000`이면 정상입니다.
+
+![Azure Portal — AFD og-migration origin group에서 ingress-nginx origin은 Weight 75, Gateway origin은 Weight 25로 모두 Enabled인 카나리 상태](images/07-afd-origin-group-canary-75-25-portal.png)
+
 **5–15분 전파 대기** 후 분배 비율을 측정합니다. origin 변경도 엣지 전파가 필요하며, health probe가 새 origin을 정상으로 판정(30초 간격 4샘플 중 3성공)하는 시간도 포함됩니다.
 
 🟢 **실행**
