@@ -10,6 +10,61 @@
 
 > **이 모듈에서 사용하는 Gateway API 경로**: 새 Gateway를 만들지 않고 03·05 모듈에서 구성한 Istio 기반 Application Routing Gateway API를 그대로 사용합니다. `GatewayClass`는 `approuting-istio`, Gateway는 `httpbin-gateway`, HTTPRoute는 `httpbin`입니다. AFD의 `origin-gateway`는 이 Gateway의 정적 공인 IP(`$STATIC_IP`)와 **HTTP 80 리스너**를 사용합니다. 클라이언트 HTTPS는 AFD에서 종료되므로, 05에서 구성한 Gateway의 HTTPS 443 리스너는 AFD origin 경로에 사용하지 않습니다.
 
+👁️ **예시** — 05 모듈 완료 시점의 Gateway API 전체 YAML
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: httpbin-gateway
+  namespace: workshop
+spec:
+  gatewayClassName: approuting-istio   # Application Routing Gateway API (Istio)
+  addresses:
+  - type: IPAddress
+    value: ${STATIC_IP}                # AFD origin-gateway에 등록하는 정적 공인 IP
+  listeners:
+  - name: http                         # 07 모듈에서 AFD origin이 사용하는 리스너
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: Same
+  - name: https                        # 05의 직접 HTTPS 접근용 — AFD origin에서는 사용하지 않음
+    hostname: httpbin.${ZONE_NAME}
+    port: 443
+    protocol: HTTPS
+    tls:
+      mode: Terminate
+      options:
+        kubernetes.azure.com/tls-cert-keyvault-uri: ${CERT_URI}
+        kubernetes.azure.com/tls-cert-service-account: ${SA_NAME}
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: httpbin
+  namespace: workshop
+spec:
+  parentRefs:
+  - name: httpbin-gateway
+  hostnames:
+  - httpbin.${ZONE_NAME}               # AFD origin-host-header와 일치
+  - httpbin.example.com
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /get
+    backendRefs:
+    - name: httpbin
+      port: 8000
+```
+
+> 위 YAML은 구조를 이해하기 위한 예시이며 다시 적용하지 않습니다. 06 모듈을 수행했다면 Gateway에 `spec.infrastructure.parametersRef`가 추가되어 있을 수 있지만, AFD가 사용하는 `approuting-istio`·정적 IP·HTTP 80 리스너·HTTPRoute 연결은 동일합니다.
+
 기존 운영 환경이 **Azure Front Door(AFD) → ingress-nginx(application routing add-on)** 구조일 때, 무중단으로 **application routing Gateway API**로 이관하는 절차를 실습합니다. 핵심 전략은 두 가지 공식 패턴의 조합입니다.
 
 1. **병렬 데이터 플레인**: ingress-nginx와 Gateway API 구현은 같은 클러스터에서 나란히 동작하며 각자 별도의 LB IP를 가집니다 — [공식 마이그레이션 가이드](https://learn.microsoft.com/azure/aks/app-routing-nginx-to-gateway-api-migration)
