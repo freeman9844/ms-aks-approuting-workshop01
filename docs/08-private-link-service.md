@@ -2,7 +2,7 @@
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
-예상 소요 시간: 20–30분
+예상 소요 시간: 15–20분
 
 > **옵션 모듈**: 이 모듈은 선택 사항입니다. [05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) 완료 후 진행하세요. [07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md)과는 다른 경로이며, 완료 후에는 private 상태를 유지한 채 [09 — 정리](09-cleanup.md)로 이동합니다.
 
@@ -44,10 +44,16 @@ export NODE_RG=$(az aks show -g $RESOURCE_GROUP -n $CLUSTER --query nodeResource
 LB_SKU=$(az aks show -g $RESOURCE_GROUP -n $CLUSTER --query networkProfile.loadBalancerSku -o tsv)
 BACKEND_POOL=$(az aks show -g $RESOURCE_GROUP -n $CLUSTER --query networkProfile.loadBalancerProfile.backendPoolType -o tsv)
 echo "LB_SKU=$LB_SKU  BACKEND_POOL=$BACKEND_POOL  NODE_RG=$NODE_RG"
-[ "$LB_SKU" = "standard" ] || { echo "Standard Load Balancer가 필요합니다."; exit 1; }
-[ "$BACKEND_POOL" = "nodeIPConfiguration" ] || { echo "nodeIPConfiguration backend pool이 필요합니다."; exit 1; }
-kubectl wait --for=condition=Programmed gateway/httpbin-gateway -n $APP_NAMESPACE --timeout=120s
-kubectl get httproute httpbin -n $APP_NAMESPACE -o jsonpath='{.spec.hostnames}'; echo
+if [ "$LB_SKU" != "standard" ]; then
+  echo "Standard Load Balancer가 필요합니다."
+  false
+elif [ "$BACKEND_POOL" != "nodeIPConfiguration" ]; then
+  echo "nodeIPConfiguration backend pool이 필요합니다."
+  false
+else
+  kubectl wait --for=condition=Programmed gateway/httpbin-gateway -n $APP_NAMESPACE --timeout=120s
+  kubectl get httproute httpbin -n $APP_NAMESPACE -o jsonpath='{.spec.hostnames}'; echo
+fi
 ```
 
 📋 **예상 출력**
