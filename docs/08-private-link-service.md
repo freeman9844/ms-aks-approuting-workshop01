@@ -44,16 +44,10 @@ export NODE_RG=$(az aks show -g $RESOURCE_GROUP -n $CLUSTER --query nodeResource
 LB_SKU=$(az aks show -g $RESOURCE_GROUP -n $CLUSTER --query networkProfile.loadBalancerSku -o tsv)
 BACKEND_POOL=$(az aks show -g $RESOURCE_GROUP -n $CLUSTER --query networkProfile.loadBalancerProfile.backendPoolType -o tsv)
 echo "LB_SKU=$LB_SKU  BACKEND_POOL=$BACKEND_POOL  NODE_RG=$NODE_RG"
-if [ "$LB_SKU" != "standard" ]; then
-  echo "Standard Load Balancer가 필요합니다."
-  false
-elif [ "$BACKEND_POOL" != "nodeIPConfiguration" ]; then
-  echo "nodeIPConfiguration backend pool이 필요합니다."
-  false
-else
-  kubectl wait --for=condition=Programmed gateway/httpbin-gateway -n $APP_NAMESPACE --timeout=120s
-  kubectl get httproute httpbin -n $APP_NAMESPACE -o jsonpath='{.spec.hostnames}'; echo
-fi
+[ "$LB_SKU" = "standard" ] || { echo "Standard Load Balancer가 필요합니다."; exit 1; }
+[ "$BACKEND_POOL" = "nodeIPConfiguration" ] || { echo "nodeIPConfiguration backend pool이 필요합니다."; exit 1; }
+kubectl wait --for=condition=Programmed gateway/httpbin-gateway -n $APP_NAMESPACE --timeout=120s
+kubectl get httproute httpbin -n $APP_NAMESPACE -o jsonpath='{.spec.hostnames}'; echo
 ```
 
 📋 **예상 출력**
