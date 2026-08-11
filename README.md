@@ -2,6 +2,8 @@
 
 Azure Kubernetes Service(AKS)의 **Application Routing 애드온**과 **Gateway API**를 사용해 httpbin 샘플 앱을 HTTP로 노출하고, Azure DNS 및 Key Vault TLS까지 적용하는 실습형 워크숍입니다. 전 과정을 Azure Cloud Shell(bash)에서 `az` CLI와 `kubectl`만으로 진행하며, 코어 실습 시간은 약 **1시간 10분–1시간 30분**입니다.
 
+07과 08은 05/06 이후에 선택하는 서로 다른 옵션 경로입니다.
+
 ---
 
 ## 아키텍처
@@ -11,9 +13,16 @@ Azure Kubernetes Service(AKS)의 **Application Routing 애드온**과 **Gateway 
 flowchart LR
   user([사용자]) -->|"HTTP → HTTPS"| pip["정적 공인 IP"] --> gw["Gateway (approuting-istio)<br/>httpbin-gateway"]
   gw --> route[HTTPRoute] --> svc[httpbin Service]
+  gw -.->|"내부 LB (옵션 08)"| ilb["Gateway internal LB<br/>Service/httpbin-gateway-approuting-istio"]
   subgraph aks ["AKS Standard (Korea Central)"]
-    gw; route; svc
+    gw; route; svc; ilb
     edns["managed external-dns<br/>(옵션)"]
+  end
+  ilb -.-> pls["Private Link Service"]
+  pls -.-> pe["Private Endpoint"]
+  pe -.-> aci["Consumer VNet<br/>+ ACI"]
+  subgraph consumer ["소비자 VNet"]
+    pe; aci
   end
   edns -.->|"A 레코드 자동 발행 (옵션)"| zone[(Azure DNS zone)]
   pip -.->|A 레코드 수동 등록| zone
@@ -33,7 +42,8 @@ flowchart LR
 5. Gateway annotation 기반 TLS 종료와 정적 IP 기반 A 레코드 등록을 확인한다. (옵션: ClusterExternalDNS를 통한 A 레코드 자동 발행)
 6. (옵션) 자동 생성되는 Gateway 인프라(Service·Deployment·HPA·PDB)를 ConfigMap으로 재정의하고, Annotation으로 내부 Load Balancer 전환을 수행한다.
 7. (옵션) Azure Front Door에서 TLS offloading을 구성하고, ingress-nginx와 Gateway API 데이터 플레인을 병렬 구성해 가중치 카나리 마이그레이션을 수행한다.
-8. 실습에 사용한 모든 Azure 리소스를 완전히 정리한다.
+8. Gateway annotation이 generated Service에 전달되는지와 Private Link Service/Private Endpoint 연결을 검증한다.
+9. 실습에 사용한 모든 Azure 리소스를 완전히 정리한다.
 
 ---
 
@@ -59,7 +69,10 @@ flowchart LR
 | 05 | [TLS Gateway와 DNS A 레코드](docs/05-tls-gateway-externaldns.md) | TLS Gateway 적용, 정적 IP로 A 레코드 등록 (옵션: ClusterExternalDNS 자동 발행) |
 | 06 | [Gateway 인프라 커스터마이징 (옵션)](docs/06-gateway-customizations.md) | ConfigMap으로 HPA·Deployment 재정의, Annotation으로 내부 LB 전환 |
 | 07 | [AFD 카나리 마이그레이션 (옵션)](docs/07-afd-canary-migration.md) | AFD TLS offloading, ingress-nginx ∥ Gateway API 병렬 구성, 가중치 카나리로 무중단 이관 |
-| 08 | [정리](docs/08-cleanup.md) | 전체 Azure 리소스 삭제 |
+| 08 | [Gateway API Private Link Service 검증 (옵션)](docs/08-private-link-service.md) | Gateway annotation 전달과 Private Endpoint/ACI로 private data path 확인 |
+| 09 | [정리](docs/09-cleanup.md) | 전체 Azure 리소스 삭제 |
+
+07과 08은 05/06 이후에 선택하는 서로 다른 옵션 경로이며, 둘 다 순차적으로 진행하지 않습니다.
 
 ---
 
@@ -74,8 +87,9 @@ flowchart LR
 | 05 | TLS Gateway와 DNS A 레코드 | 10–15분 (인증서 동기화 대기 포함, ExternalDNS 옵션 +10분) | Key Vault 동기화 |
 | 06 | Gateway 인프라 커스터마이징 (옵션) | 10–15분 | HPA 반영·내부 LB 재구성 대기 |
 | 07 | AFD 카나리 마이그레이션 (옵션) | 50–90분 | AFD 라우트·가중치 변경 전파 대기 (회당 5–30분) |
-| 08 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
-| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분)** | |
+| 08 | Gateway API Private Link Service 검증 (옵션) | 15–20분 (Private Endpoint 승인·ACI 통신 확인 대기 포함; 2026-08-11 리허설 실측: Gateway 패치→ACI HTTP 200 확인까지 순수 Azure 작업 시간 약 6분) | Private Endpoint 승인·ACI 통신 확인 |
+| 09 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
+| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +15–20분)** | |
 
 ---
 
@@ -90,8 +104,10 @@ flowchart LR
 | Azure DNS zone | — | 공개 zone 기준 |
 | Azure Key Vault | — | 자체 서명 인증서 1건 |
 | Azure Front Door Standard (옵션 07) | 기본요금 약 $35/월의 일할 + 요청·전송량 | 실습 1–1.5시간 기준 소액, 07 수행 시에만 생성 |
+| Azure Private Endpoint (옵션 08) | — | private path 검증용, PE 승인 대기 포함 (2026-08-11 리허설 실측: 생성 직후 자동 `Approved`, 모듈 실습 시간(약 10–15분) 동안만 유지) |
+| Azure Container Instances (옵션 08) | 짧은 실행 시간 기준 소액 | consumer VNet의 ACI로 private data path 확인 (2026-08-11 리허설 실측: 컨테이너 실행 시간 약 20–25초, 이미지 pull 포함) |
 
-실습 종료 후 반드시 **08 — 정리** 모듈을 실행해 모든 리소스를 삭제하세요.
+실습 종료 후 반드시 **09 — 정리** 모듈을 실행해 모든 리소스를 삭제하세요.
 
 ---
 
@@ -131,13 +147,18 @@ AKS 노드 리소스 그룹(`MC_...`) 내부 리소스는 AKS가 자동 관리�
 - [Workload Identity Federation (Microsoft Entra)](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation)
 - [AKS Key Vault Secrets Store CSI Driver](https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-driver) — 05 모듈 인증서 동기화 메커니즘
 - [Key Vault 인증서 개요](https://learn.microsoft.com/en-us/azure/key-vault/certificates/about-certificates)
-- [Key Vault soft-delete 개요](https://learn.microsoft.com/en-us/azure/key-vault/general/soft-delete-overview) — 08 모듈 purge가 필요한 이유
+- [Key Vault soft-delete 개요](https://learn.microsoft.com/en-us/azure/key-vault/general/soft-delete-overview) — 09 모듈 purge가 필요한 이유
 
 ### DNS·네트워킹 (Microsoft Learn)
 
 - [Azure DNS zone과 레코드 개요](https://learn.microsoft.com/en-us/azure/dns/dns-zones-records)
 - [Azure 공인 IP 주소 (SKU·할당 방식)](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/public-ip-addresses)
 - [az aks CLI 레퍼런스](https://learn.microsoft.com/en-us/cli/azure/aks)
+
+### Private Link Service (Microsoft Learn · cloud-provider-azure) — 08 모듈
+
+- [AKS internal LB + Private Link Service](https://learn.microsoft.com/azure/aks/internal-lb#connect-azure-private-link-service-to-an-aks-internal-load-balancer) — 내부 LB와 PLS 연결 조건
+- [cloud-provider-azure PLS annotations](https://cloud-provider-azure.sigs.k8s.io/topics/pls-integration/) — `azure-pls-*` 어노테이션 전달 규칙
 
 ### 오픈소스 공식 문서
 

@@ -301,4 +301,4 @@ TTL    Fqdn                                          Name     ProvisioningState 
 
 ---
 
-[← 04 — DNS·TLS 인프라 준비](04-dns-tls-infra.md) | 다음: [06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) 또는 [07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) 또는 [08 — 정리](08-cleanup.md)
+[← 04 — DNS·TLS 인프라 준비](04-dns-tls-infra.md) | 다음: [06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) 또는 [07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) 또는 [08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) 또는 [09 — 정리](09-cleanup.md)

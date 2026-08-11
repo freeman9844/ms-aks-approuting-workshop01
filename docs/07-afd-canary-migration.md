@@ -4,7 +4,7 @@
 
 예상 소요 시간: 50–90분 (Azure Front Door 전파 대기가 대부분 — 각 구성 변경마다 5–30분, 날에 따라 편차 큼)
 
-> **옵션 모듈**: 이 모듈은 선택 사항입니다. 건너뛰고 바로 [08 — 정리](08-cleanup.md)로 이동해도 됩니다.
+> **옵션 모듈**: 이 모듈은 선택 사항입니다. 건너뛰고 바로 [09 — 정리](09-cleanup.md)로 이동해도 됩니다.
 
 > **전제 조건**: [03](03-gateway-httproute.md)의 정적 공인 IP 고정과 [05](05-tls-gateway-externaldns.md)의 TLS Gateway 적용(HTTPRoute `hostnames`에 `httpbin.$ZONE_NAME` 포함)이 완료된 상태여야 합니다. 05를 건너뛰었다면 이 모듈의 `httpbin.$ZONE_NAME` 요청이 404를 반환합니다.
 
@@ -480,7 +480,7 @@ No resources found in app-routing-system namespace.
 AFD HTTPS 경유: 200
 ```
 
-마이그레이션 완료 — ingress-nginx는 사라졌고, AFD는 Gateway API 데이터 플레인만 바라봅니다. AFD 리소스(`afd-mig-$SUFFIX`)는 `$RESOURCE_GROUP`에 있으므로 [08 — 정리](08-cleanup.md)의 RG 삭제로 함께 제거됩니다.
+마이그레이션 완료 — ingress-nginx는 사라졌고, AFD는 Gateway API 데이터 플레인만 바라봅니다. AFD 리소스(`afd-mig-$SUFFIX`)는 `$RESOURCE_GROUP`에 있으므로 [09 — 정리](09-cleanup.md)의 RG 삭제로 함께 제거됩니다.
 
 > **실 운영과의 차이**: 이 실습은 AFD 기본 도메인(`*.azurefd.net`)의 Microsoft 관리 인증서로 TLS offloading을 확인했습니다. 실 운영에서는 커스텀 도메인을 AFD에 연결하고 managed TLS 인증서를 발급한 뒤, [공식 마이그레이션 가이드](https://learn.microsoft.com/azure/aks/app-routing-nginx-to-gateway-api-migration)의 체크리스트(모든 hostname·경로 검증, 인증서 체인, 지속 부하 관측)를 컷오버 전에 수행하세요. 보안 요구사항상 origin 구간도 암호화해야 한다면 `HttpsOnly`와 유효한 origin 인증서를 사용해 end-to-end TLS로 구성합니다.
 
@@ -498,4 +498,4 @@ AFD HTTPS 경유: 200
 
 ---
 
-[← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) 또는 [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | 다음: [08 — 정리](08-cleanup.md)
+[← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) 또는 [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | 다음: [09 — 정리](09-cleanup.md)
