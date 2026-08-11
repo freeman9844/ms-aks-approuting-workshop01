@@ -3,3 +3,5 @@ cert-policy.json
 *.pem
 .DS_Store
 docs/superpowers/
+
+.worktrees/
