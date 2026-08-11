@@ -174,6 +174,10 @@ PLS_ID=/subscriptions/.../resourceGroups/MC_.../providers/Microsoft.Network/priv
 
 > **주의 — 아직 종단간 성공을 선언하지 않습니다.** 위 출력은 “Gateway → generated Service → node RG의 PLS 리소스”까지의 제어면 증거입니다. `azure-pls-*`가 실제 데이터 경로까지 통과하는지는 다음 절의 Private Endpoint/ACI 경로를 **리허설에서** 검증한 뒤 확정합니다.
 
+PLS 생성 결과는 Azure Portal에서도 확인할 수 있습니다. **Network foundation → Private Link services → `pls-approuting-$SUFFIX` → Overview**로 이동해 Status가 `Succeeded`이고 NAT subnet·NAT IP·연결된 Load balancer가 표시되는지 확인합니다.
+
+![Azure Portal — Private Link services 목록과 생성된 PLS의 Succeeded 상태, NAT subnet, NAT IP, Load balancer 정보](images/08-private-link-service-portal.png)
+
 ---
 
 ## 4. 소비자 VNet, Private Endpoint, ACI로 private data path 확인
