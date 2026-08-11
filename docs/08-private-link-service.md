@@ -228,6 +228,8 @@ Private Endpoint와 소비자 VNet은 `$RESOURCE_GROUP`에 생기고, 연결 대
 
 ACI는 VNet 내부에서만 통신하므로 `--ip-address Private`를 사용합니다. 컨테이너는 `curlimages/curl:8.10.1` 단일 이미지로 한 번 실행되고 종료되며, 마지막 판정은 `az container logs`로만 확인합니다.
 
+> **참고** `--os-type Linux --cpu 1 --memory 1`은 필수입니다. az CLI는 `osType`을 자동 추론하지 않으며, 리소스 요청(CPU/메모리)도 API 버전 `2017-07-01-preview` 이후 항상 명시해야 합니다. 생략하면 각각 `InvalidOsType`, `ResourceRequestsNotSpecified` 오류로 실패합니다.
+
 🟢 **실행**
 ```bash
 export ACI_NAME=aci-pls-test-$SUFFIX
@@ -239,6 +241,7 @@ done
 
 az container create -g $RESOURCE_GROUP -n $ACI_NAME -l $LOCATION \
   --image curlimages/curl:8.10.1 \
+  --os-type Linux --cpu 1 --memory 1 \
   --restart-policy Never \
   --ip-address Private \
   --vnet $CONSUMER_VNET --subnet snet-aci \
@@ -257,7 +260,7 @@ done
 az container logs -g $RESOURCE_GROUP -n $ACI_NAME
 ```
 
-아래는 **목표 상태 예시**입니다. 이 브랜치 단계에서는 아직 live rehearsal로 값이 확정되지 않았으므로, alias/IP/본문 필드는 리허설 후 실제 출력에 맞춰 보정해야 합니다. 판정 기준은 `HTTP_CODE=200`과 httpbin JSON body가 함께 보이는지입니다.
+아래는 **live rehearsal로 검증한 실측 출력**입니다. 판정 기준은 `HTTP_CODE=200`과 httpbin JSON body가 함께 보이는지입니다.
 
 📋 **예상 출력**
 ```text
@@ -265,14 +268,25 @@ HTTP_CODE=200
 {
   "args": {},
   "headers": {
-    "Accept": "*/*",
-    "Host": "httpbin.ws35448.approuting-workshop.example",
-    "User-Agent": "curl/8.10.1"
+    "Accept": ["*/*"],
+    "Host": ["httpbin.ws35448.approuting-workshop.example"],
+    "User-Agent": ["curl/8.10.1"],
+    "X-Envoy-Attempt-Count": ["1"],
+    "X-Envoy-Decorator-Operation": ["httpbin.workshop.svc.cluster.local:8000/*"],
+    "X-Envoy-External-Address": ["10.224.0.4"],
+    "X-Envoy-Peer-Metadata": ["..."],
+    "X-Envoy-Peer-Metadata-Id": ["router~10.244.0.29~httpbin-gateway-approuting-istio-xxxxxxxxxx-xxxxx.workshop~workshop.svc.cluster.local"],
+    "X-Forwarded-For": ["10.224.0.4"],
+    "X-Forwarded-Proto": ["http"],
+    "X-Request-Id": ["..."]
   },
-  "origin": "10.250.2.4",
+  "method": "GET",
+  "origin": "10.224.0.4",
   "url": "http://httpbin.ws35448.approuting-workshop.example/get"
 }
 ```
+
+> **참고 — `origin`이 ACI 서브넷 IP(`10.250.2.x`)가 아니라 AKS 서브넷 대역(`10.224.0.x`)으로 보이는 이유**: Azure Private Link Service는 기본적으로 소비자(consumer) 트래픽을 PLS의 NAT IP 풀로 변환(SNAT)해 provider 쪽에 전달합니다. 원본 클라이언트 IP는 [TCP Proxy Protocol v2](https://learn.microsoft.com/en-us/azure/private-link/private-link-service-overview#getting-connection-information-using-tcp-proxy-v2)를 PLS에서 활성화해야만 보존됩니다. 이 워크샵에서는 Proxy Protocol을 켜지 않았으므로 `origin`/`X-Forwarded-For` 모두 ACI가 아닌 NAT IP(AKS 서브넷 대역)로 관측되는 것이 **정상 동작**입니다. `X-Envoy-*` 헤더는 Istio Gateway가 Envoy를 통해 요청을 프록시하면서 추가한 것으로, Gateway API 자체가 아니라 이 워크샵의 `approuting-istio` 구현(Istio Ingress Gateway)에서 비롯됩니다.
 
 이 단계가 리허설에서도 같은 형태로 통과하면, `Private Endpoint → PLS → internal LB → Application Routing Gateway → HTTPRoute → httpbin` 경로가 실제로 동작했다는 데이터를 확보한 것입니다.
 
@@ -298,6 +312,7 @@ HTTP_CODE=200
 | `az network private-link-service show`가 `ResourceNotFound`를 반환함 | Service annotation은 전달됐지만 Azure LB/PLS 생성이 아직 끝나지 않았거나, 클러스터 조건이 PLS 요구 사항을 충족하지 않음 | 1절의 LB SKU/backend pool 결과를 다시 확인합니다. `kubectl get svc httpbin-gateway-approuting-istio -n $APP_NAMESPACE -o yaml`에서 internal/PLS annotation이 보이면 1–2분 더 기다린 뒤 다시 조회합니다 |
 | Private Endpoint 상태가 계속 `Pending`에 머묾 | 연결 승인이 아직 끝나지 않았거나, 잘못된 PLS ID를 사용했거나, `snet-pe`의 PE 네트워크 정책이 비활성화되지 않음 | `az network private-endpoint show -g $RESOURCE_GROUP -n $PE_NAME --query 'privateLinkServiceConnections[0].privateLinkServiceConnectionState' -o json`로 상세 상태를 봅니다. `az network vnet subnet show -g $RESOURCE_GROUP --vnet-name $CONSUMER_VNET -n snet-pe --query privateEndpointNetworkPolicies -o tsv`가 `Disabled`인지 확인합니다 |
 | ACI가 `Provisioning failed` 또는 subnet 오류로 생성되지 않음 | `snet-aci` delegation이 없거나, 같은 이름의 기존 컨테이너 그룹이 아직 삭제 중임 | `az network vnet subnet show -g $RESOURCE_GROUP --vnet-name $CONSUMER_VNET -n snet-aci --query delegations[].serviceName -o tsv`로 `Microsoft.ContainerInstance/containerGroups` 위임을 확인합니다. 기존 `aci-pls-test-$SUFFIX`가 남아 있으면 삭제 완료 후 다시 생성합니다 |
+| `az container create` 실행 시 `InvalidOsType` 또는 `ResourceRequestsNotSpecified` 오류 | az CLI가 `osType`을 자동 추론하지 않고, ACI API가 `2017-07-01-preview` 이후 CPU/메모리 요청을 항상 요구함 | 명령에 `--os-type Linux --cpu 1 --memory 1`이 포함되어 있는지 확인합니다(이 문서의 4.2절 명령에 이미 반영됨) |
 | `az container logs`에서 `HTTP_CODE=200`이 보이지 않거나 curl이 non-200/timeout으로 끝남 | Private Endpoint IP는 생겼지만 data path 일부(PLS 승인, Gateway reconcile, HTTPRoute host match, backend 준비)가 아직 완료되지 않았거나 실패함 | 먼저 `echo $PE_IP`와 `kubectl get gateway httpbin-gateway -n $APP_NAMESPACE`로 사설 IP가 맞는지 확인합니다. `Host: httpbin.$ZONE_NAME` 헤더가 빠지지 않았는지 확인하고, `kubectl get httproute httpbin -n $APP_NAMESPACE -o jsonpath='{.spec.hostnames}'`에 해당 호스트가 포함되는지 다시 점검합니다 |
 
 ---

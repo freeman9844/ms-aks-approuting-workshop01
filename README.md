@@ -87,9 +87,9 @@ flowchart LR
 | 05 | TLS Gateway와 DNS A 레코드 | 10–15분 (인증서 동기화 대기 포함, ExternalDNS 옵션 +10분) | Key Vault 동기화 |
 | 06 | Gateway 인프라 커스터마이징 (옵션) | 10–15분 | HPA 반영·내부 LB 재구성 대기 |
 | 07 | AFD 카나리 마이그레이션 (옵션) | 50–90분 | AFD 라우트·가중치 변경 전파 대기 (회당 5–30분) |
-| 08 | Gateway API Private Link Service 검증 (옵션) | 20–30분 (임시, Task 4 라이브 리허설 후 실측값으로 교체 예정) | Private Endpoint 승인·ACI 통신 확인 |
+| 08 | Gateway API Private Link Service 검증 (옵션) | 15–20분 (Private Endpoint 승인·ACI 통신 확인 대기 포함; 2026-08-11 리허설 실측: Gateway 패치→ACI HTTP 200 확인까지 순수 Azure 작업 시간 약 6분) | Private Endpoint 승인·ACI 통신 확인 |
 | 09 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
-| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +20–30분 (임시, Task 4 라이브 리허설 후 실측값으로 교체 예정))** | |
+| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +15–20분)** | |
 
 ---
 
@@ -104,8 +104,8 @@ flowchart LR
 | Azure DNS zone | — | 공개 zone 기준 |
 | Azure Key Vault | — | 자체 서명 인증서 1건 |
 | Azure Front Door Standard (옵션 07) | 기본요금 약 $35/월의 일할 + 요청·전송량 | 실습 1–1.5시간 기준 소액, 07 수행 시에만 생성 |
-| Azure Private Endpoint (옵션 08) | — | private path 검증용 (짧은 실행 시간 기준), PE 승인 대기 포함 |
-| Azure Container Instances (옵션 08) | 짧은 실행 시간 기준 소액 | consumer VNet의 ACI로 private data path 확인 (짧은 실행 시간 기준) |
+| Azure Private Endpoint (옵션 08) | — | private path 검증용, PE 승인 대기 포함 (2026-08-11 리허설 실측: 생성 직후 자동 `Approved`, 모듈 실습 시간(약 10–15분) 동안만 유지) |
+| Azure Container Instances (옵션 08) | 짧은 실행 시간 기준 소액 | consumer VNet의 ACI로 private data path 확인 (2026-08-11 리허설 실측: 컨테이너 실행 시간 약 20–25초, 이미지 pull 포함) |
 
 실습 종료 후 반드시 **09 — 정리** 모듈을 실행해 모든 리소스를 삭제하세요.
 
