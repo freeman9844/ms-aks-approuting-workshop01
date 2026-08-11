@@ -157,7 +157,7 @@ AKS 노드 리소스 그룹(`MC_...`) 내부 리소스는 AKS가 자동 관리�
 
 ### Private Link Service (Microsoft Learn · cloud-provider-azure) — 08 모듈
 
-- [AKS internal LB + Private Link Service](https://learn.microsoft.com/azure/aks/internal-lb#connect-azure-private-link-service-to-an-internal-load-balancer) — 내부 LB와 PLS 연결 조건
+- [AKS internal LB + Private Link Service](https://learn.microsoft.com/azure/aks/internal-lb#connect-azure-private-link-service-to-an-aks-internal-load-balancer) — 내부 LB와 PLS 연결 조건
 - [cloud-provider-azure PLS annotations](https://cloud-provider-azure.sigs.k8s.io/topics/pls-integration/) — `azure-pls-*` 어노테이션 전달 규칙
 
 ### 오픈소스 공식 문서
