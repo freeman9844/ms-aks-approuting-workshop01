@@ -20,7 +20,7 @@ source ~/.approuting-ws-env
 
 ## 1. 리소스 그룹 삭제
 
-08 경로에서는 소비자 VNet, Private Endpoint, ACI가 `$RESOURCE_GROUP`에 생성됩니다. 반면 PLS와 내부 LB는 AKS 노드 리소스 그룹(`MC_...`)에 생성되며, AKS 클러스터를 삭제하면 함께 제거됩니다.
+[08 경로](08-private-link-service.md)에서는 소비자 VNet, Private Endpoint, ACI가 `$RESOURCE_GROUP`에 생성됩니다. 반면 PLS와 내부 LB는 AKS 노드 리소스 그룹(`MC_...`)에 생성되며, AKS 클러스터를 삭제하면 함께 제거됩니다.
 
 이 워크샵에서 직접 생성한 모든 리소스는 단일 리소스 그룹 `$RESOURCE_GROUP`에 속해 있습니다.
 Azure DNS Zone과 05 모듈에서 등록한 A 레코드(수동 또는 ExternalDNS 옵션의 자동 발행분)도 동일 RG에 있으므로, RG를 삭제하면 Zone과 함께 레코드가 함께 제거됩니다.
@@ -104,4 +104,4 @@ rm -f ~/.approuting-ws-env ~/cert-policy.json
 
 ---
 
-[← 07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) · [← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) · [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | [처음으로 (README)](../README.md)
+[← 08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) · [← 07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) · [← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) · [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | [처음으로 (README)](../README.md)
