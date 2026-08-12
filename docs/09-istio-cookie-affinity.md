@@ -4,7 +4,7 @@
 
 예상 소요 시간: 25–35분 (add-on 전환과 Gateway Load Balancer 생성 대기 포함)
 
-> **종착형 옵션 모듈**: 05 또는 06 완료 후 선택합니다. 07 AFD·08 PLS와 순차 수행하지 않으며, 완료 후 Application Routing Gateway API로 되돌리지 않고 [10 — 정리](10-cleanup.md)로 이동합니다.
+> **종착형 옵션 모듈**: 05 또는 06 완료 후 선택합니다. 07 AFD·08 PLS와 서로 배타적인 종착 경로이며 순차 수행하지 않습니다. 완료 후 Application Routing Gateway API로 되돌리지 않고 [10 — 정리](10-cleanup.md)로 이동합니다.
 
 이 옵션은 `approuting-istio` GatewayClass에서 시작한 현재 ingress 경로를 AKS Istio service mesh add-on의 `istio` GatewayClass로 전환한 뒤, `DestinationRule`의 `consistentHash.httpCookie`가 **같은 쿠키에는 같은 백엔드 파드를 반복 선택하고**, **엔드포인트 구성이 바뀌면 다른 파드로 재매핑될 수 있음**을 직접 확인하는 실험입니다. 마지막에는 애플리케이션이 반환하는 **큰 응답 헤더(8/16/32 KiB)** 가 현재 AKS/Istio 조합에서 어떻게 보이는지도 기록합니다.
 
@@ -417,7 +417,7 @@ rm -rf "$COOKIE_DIR"
 
 이 모듈은 Application Routing의 `approuting-istio` 경로와 Istio `DestinationRule` 기반 경로가 **겉으로는 비슷해 보여도 세션 의미론과 운영 포인트가 다르다**는 점을 보여 줍니다. 또한 응답 헤더 크기 결과도 “이 버전에서 이렇게 보였다”는 관찰값이지, 영구 보장 사양이 아닙니다.
 
-완료 후에는 Application Routing Gateway API로 되돌리지 말고 바로 [10 — 정리](10-cleanup.md)로 이동합니다. 07 AFD 또는 08 PLS는 현재 Gateway를 다시 바꾸는 다른 종착형 경로이므로, 이 모듈 뒤에 이어서 수행하지 않습니다.
+완료 후에는 Application Routing Gateway API로 되돌리지 말고 바로 [10 — 정리](10-cleanup.md)로 이동합니다. 07 AFD와 08 PLS는 현재 Gateway를 다시 바꾸는 다른 종착형 경로이므로, 이 모듈 뒤에 이어서 수행하지 않습니다.
 
 ---
 

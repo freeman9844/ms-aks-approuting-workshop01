@@ -4,7 +4,7 @@
 
 예상 소요 시간: 10–15분
 
-> **옵션 모듈**: 이 모듈은 선택 사항입니다. 건너뛰고 [07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) 또는 [08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) 또는 [09 — 정리](09-cleanup.md)로 이동해도 됩니다.
+> **옵션 모듈**: 이 모듈은 선택 사항입니다. 건너뛰고 [07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) 또는 [08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) 또는 [09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md) 또는 [10 — 정리](10-cleanup.md)로 이동해도 됩니다.
 
 Gateway 리소스를 만들면 application routing add-on(관리형 Istio)이 뒤에서 LoadBalancer **Service**, **Deployment**, **HPA**(HorizontalPodAutoscaler), **PDB**(PodDisruptionBudget)를 자동으로 생성합니다. 03 모듈에서 이미 `httpbin-gateway-approuting-istio`라는 이름으로 이 리소스들을 확인했습니다.
 
@@ -13,7 +13,7 @@ Gateway 리소스를 만들면 application routing add-on(관리형 Istio)이 �
 1. **ConfigMap customizations** — GatewayClass 기본값 확인 및 Gateway별 ConfigMap으로 HPA·Deployment 재정의
 2. **Annotation customizations** — `spec.infrastructure.annotations`로 내부(Internal) Load Balancer 전환을 실제 수행
 
-> ⚠️ 마지막 절(3절)의 내부 LB 전환을 수행하면 03 모듈에서 고정한 정적 공인 IP 기반의 **외부 접근이 끊어집니다**. 끊어진 상태 그대로 [08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) 또는 [09 — 정리](09-cleanup.md)로 진행하면 됩니다. 옵션 [07](07-afd-canary-migration.md)을 이어서 진행하려면 07 모듈 상단의 복원 절차를 따르세요.
+> ⚠️ 마지막 절(3절)의 내부 LB 전환을 수행하면 03 모듈에서 고정한 정적 공인 IP 기반의 **외부 접근이 끊어집니다**. 끊어진 상태 그대로 [08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) 또는 [09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md) 또는 [10 — 정리](10-cleanup.md)로 진행하면 됩니다. 옵션 [07](07-afd-canary-migration.md)을 이어서 진행하려면 07 모듈 상단의 복원 절차를 따르세요.
 
 참고: [Gateway API 지원 구성 — ConfigMap customizations](https://learn.microsoft.com/en-us/azure/aks/istio-gateway-api#configmap-customizations)
 
@@ -146,7 +146,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://$STATIC_IP/get -H "Host: httpbin
 200
 ```
 
-> 커스터마이징한 HPA(3/4)와 ConfigMap `gw-options`는 별도로 원복하지 않아도 됩니다. [09 — 정리](09-cleanup.md)에서 리소스 그룹과 클러스터가 통째로 삭제됩니다.
+> 커스터마이징한 HPA(3/4)와 ConfigMap `gw-options`는 별도로 원복하지 않아도 됩니다. [10 — 정리](10-cleanup.md)에서 리소스 그룹과 클러스터가 통째로 삭제됩니다.
 
 ---
 
@@ -154,7 +154,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://$STATIC_IP/get -H "Host: httpbin
 
 Gateway의 `spec.infrastructure.annotations`에 지정한 어노테이션은 자동 생성되는 LoadBalancer Service에 그대로 전달됩니다. 대표적인 활용 예는 **내부(Internal) Load Balancer** 전환으로, VNet 내부에서만 접근 가능한 프라이빗 게이트웨이를 만들 수 있습니다.
 
-> ⚠️ **이 실습을 수행하면 정적 공인 IP 기반의 외부 접근이 끊어집니다.** 완료 후 [08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) 또는 [09 — 정리](09-cleanup.md)로 이동하면 되며, 옵션 [07](07-afd-canary-migration.md)을 진행할 계획이라면 07 모듈 상단의 복원 절차를 따르세요.
+> ⚠️ **이 실습을 수행하면 정적 공인 IP 기반의 외부 접근이 끊어집니다.** 완료 후 [08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) 또는 [09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md) 또는 [10 — 정리](10-cleanup.md)로 이동하면 되며, 옵션 [07](07-afd-canary-migration.md)을 진행할 계획이라면 07 모듈 상단의 복원 절차를 따르세요.
 
 ### 3.1 내부 LB 전환 — 어노테이션 추가와 spec.addresses 제거
 
@@ -290,7 +290,7 @@ spec:
 
 > **이 워크샵 클러스터에서 실습하지 않는 이유**: Gateway 하나당 파드 2개(HPA `minReplicas: 2`, 각 CPU 100m 요청)가 추가로 필요합니다. 이 워크샵의 2노드 클러스터는 CPU 요청량이 이미 거의 가득 차 있어(노드당 약 98–99%), 새 Gateway 파드가 `Insufficient cpu`로 `Pending`에 머물고 Gateway가 `PROGRAMMED: False` 상태로 남습니다. 기능의 제약이 아니라 노드 리소스의 제약이므로, 노드 수를 늘리거나 더 큰 VM SKU를 사용하면 정상 동작합니다.
 
-이것으로 이 모듈의 실습이 끝났습니다. [07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md)을 이어서 진행하거나(07 상단의 복원 절차 필요), [08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md)를 이어서 진행하거나, [09 — 정리](09-cleanup.md)로 이동해 리소스를 삭제하세요.
+이것으로 이 모듈의 실습이 끝났습니다. [07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md)을 이어서 진행하거나(07 상단의 복원 절차 필요), [08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md)를 이어서 진행하거나, [09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md)을 이어서 진행하거나, [10 — 정리](10-cleanup.md)로 이동해 리소스를 삭제하세요.
 
 ---
 
@@ -305,4 +305,4 @@ spec:
 
 ---
 
-[← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | 다음: [07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) 또는 [08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) 또는 [09 — 정리](09-cleanup.md)
+[← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | 다음: [07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) 또는 [08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) 또는 [09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md) 또는 [10 — 정리](10-cleanup.md)

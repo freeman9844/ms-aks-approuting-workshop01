@@ -1,8 +1,10 @@
-# 09 — 정리
+# 10 — 정리
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
 예상 소요 시간: 5–10분 (RG 삭제 완료 대기 포함)
+
+09 옵션을 수행했다면 AKS Istio service mesh add-on, `Gateway/istio-session-gateway`, `istio-session-test` 앱/파드, 그리고 그 과정에서 자동 생성된 Standard Load Balancer가 AKS 관련 리소스 그룹에 남아 있습니다. 이 자원들도 아래에서 수행하는 동일한 리소스 그룹 삭제 흐름으로 함께 제거됩니다.
 
 ---
 
@@ -21,6 +23,8 @@ source ~/.approuting-ws-env
 ## 1. 리소스 그룹 삭제
 
 [08 경로](08-private-link-service.md)에서는 소비자 VNet, Private Endpoint, ACI가 `$RESOURCE_GROUP`에 생성됩니다. 반면 PLS와 내부 LB는 AKS 노드 리소스 그룹(`MC_...`)에 생성되며, AKS 클러스터를 삭제하면 함께 제거됩니다.
+
+[09 경로](09-istio-cookie-affinity.md)에서는 Application Routing 대신 AKS Istio service mesh add-on과 `istio` GatewayClass 경로를 사용하게 됩니다. 이때 남는 Istio control plane, `Gateway/istio-session-gateway`, `istio-session-test` 테스트 앱, 그리고 자동 생성된 Load Balancer 역시 워크샵 RG와 AKS 노드 리소스 그룹 안에서 관리되므로, 같은 RG 삭제 절차로 정리됩니다.
 
 이 워크샵에서 직접 생성한 모든 리소스는 단일 리소스 그룹 `$RESOURCE_GROUP`에 속해 있습니다.
 Azure DNS Zone과 05 모듈에서 등록한 A 레코드(수동 또는 ExternalDNS 옵션의 자동 발행분)도 동일 RG에 있으므로, RG를 삭제하면 Zone과 함께 레코드가 함께 제거됩니다.
@@ -104,4 +108,4 @@ rm -f ~/.approuting-ws-env ~/cert-policy.json
 
 ---
 
-[← 08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) · [← 07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) · [← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) · [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | [처음으로 (README)](../README.md)
+[← 09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md) · [← 08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) · [← 07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) · [← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) · [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | [처음으로 (README)](../README.md)
