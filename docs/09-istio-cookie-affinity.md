@@ -370,23 +370,37 @@ kubectl get endpointslice -n "$APP_NAMESPACE" \
 
 🟢 **실행**
 ```bash
-export STICKY_POD=$(curl -sS -b "$COOKIE_JAR" \
-  "http://$ISTIO_GATEWAY_IP/identity" | jq -r .pod)
+export STICKY_POD=$(curl -fsS --max-time 5 -b "$COOKIE_JAR" \
+  "http://$ISTIO_GATEWAY_IP/identity" |
+  jq -er '.pod | select(type == "string" and length > 0)') || {
+  echo "삭제할 sticky 파드 이름을 확인하지 못했습니다."
+  exit 1
+}
 kubectl delete pod "$STICKY_POD" -n "$APP_NAMESPACE"
-kubectl rollout status deployment/istio-session-test \
-  -n "$APP_NAMESPACE" --timeout=300s
-export REMAPPED_POD=$(curl -sS -b "$COOKIE_JAR" \
-  "http://$ISTIO_GATEWAY_IP/identity" | jq -r .pod)
+export REMAPPED_POD=""
+for ATTEMPT in $(seq 1 30); do
+  REMAPPED_POD=$(curl -fsS --max-time 5 -b "$COOKIE_JAR" \
+    "http://$ISTIO_GATEWAY_IP/identity" 2>/dev/null |
+    jq -er '.pod | select(type == "string" and length > 0)' 2>/dev/null) || true
+  if [ -n "$REMAPPED_POD" ] && [ "$STICKY_POD" != "$REMAPPED_POD" ]; then
+    break
+  fi
+  sleep 2
+done
 echo "before=$STICKY_POD  after=$REMAPPED_POD"
-[ "$STICKY_POD" != "$REMAPPED_POD" ]
+[ -n "$REMAPPED_POD" ] && [ "$STICKY_POD" != "$REMAPPED_POD" ] || {
+  echo "60초 안에 정상 파드로 재매핑되지 않았습니다."
+  exit 1
+}
 ```
 
 📋 **예상 출력**
 ```text
 pod "istio-session-test-7d6f8d8458-9jpzm" deleted
-deployment "istio-session-test" successfully rolled out
-before=istio-session-test-7d6f8d8458-9jpzm  after=istio-session-test-7f84c7d7bf-wm9qv
+before=istio-session-test-7d6f8d8458-9jpzm  after=istio-session-test-7d6f8d8458-v6l8n
 ```
+
+삭제 직후에는 EndpointSlice와 Envoy 설정 전파 중에 일시적인 503 또는 연결 실패가 발생할 수 있으므로, 최대 60초 동안 **HTTP 성공 응답의 비어 있지 않은 파드 이름**을 기다립니다. 빈 응답이나 JSON 파싱 실패는 재매핑 성공으로 인정하지 않습니다.
 
 이 재매핑이 이번 실험의 핵심 차이입니다. 즉, 이 방식은 “한 번 정해진 세션이 절대 바뀌지 않는 외부 저장소형 매핑”이 아니라, **현재 엔드포인트 집합에 대한 consistent hash** 입니다. 따라서 파드가 사라지거나 새 파드로 교체되면 같은 쿠키라도 다른 대상이 선택될 수 있습니다.
 
@@ -395,6 +409,14 @@ before=istio-session-test-7d6f8d8458-9jpzm  after=istio-session-test-7f84c7d7bf-
 ## 7. 8/16/32 KiB 큰 응답 헤더 관찰
 
 이 테스트는 요청 본문이 아니라 **응답 헤더 크기**를 관찰하는 실험입니다. 앱은 `X-Workshop-Large-Header`에 지정한 크기만큼 값을 채우고, 우리는 HTTP 상태 코드와 실제 헤더 바이트 길이만 요약해서 기록합니다.
+
+NGINX에서 사용하던 세 설정의 역할은 서로 다릅니다.
+
+- `nginx.ingress.kubernetes.io/proxy-buffer-size`: 업스트림 응답의 첫 부분, 특히 큰 응답 헤더를 읽는 버퍼입니다. 이번 8/16/32 KiB 시험이 **직접 확인하는 대상**입니다.
+- `nginx.ingress.kubernetes.io/proxy-buffers`: 업스트림 응답 본문을 저장하는 버퍼 수와 크기를 제어합니다.
+- `nginx.ingress.kubernetes.io/proxy-busy-buffers-size`: 클라이언트로 전송 중인 응답 버퍼의 최대 크기를 제어합니다.
+
+따라서 이번 단일 대형 헤더 시험은 `proxy-buffer-size`에 대응하는 동작만 직접 관찰합니다. `proxy-buffers`와 `proxy-busy-buffers-size`가 담당하던 **응답 본문 버퍼링은 직접 검증하지 않습니다**. 두 설정까지 비교하려면 별도의 큰 응답 본문 또는 스트리밍 시험이 필요합니다.
 
 🟢 **실행**
 ```bash
@@ -437,6 +459,8 @@ rm -rf "$COOKIE_DIR"
 
 위 세 줄은 **2026-08-12 Korea Central 리허설에서 관찰한 실제 요약값**입니다. 실제 실습에서 16 KiB 또는 32 KiB가 다른 상태 코드로 보이면, 이번 문서의 목적은 값을 억지로 성공시키는 것이 아니라 **관측된 상태 코드와 바이트 길이를 그대로 기록하는 것**입니다. Envoy 설정을 바꿔 결과를 맞추지 말고, 현재 AKS/Istio 버전에서 어떤 값이 관찰됐는지 남기세요.
 
+이 결과만으로 `proxy-buffers`와 `proxy-busy-buffers-size`에 해당하는 응답 본문 버퍼링까지 문제가 없다고 결론 내리면 안 됩니다.
+
 ---
 
 ## 8. 결과 해석과 정리 방향
@@ -444,7 +468,8 @@ rm -rf "$COOKIE_DIR"
 | 질문 | 기록할 결과 |
 |------|-------------------|
 | `DestinationRule`이 NGINX cookie affinity를 그대로 대체할 수 있는가? | 쿠키 키 기반의 일관 라우팅은 가능하지만, 완전히 동일한 영속 sticky semantics는 아닙니다 |
-| Envoy에서 NGINX의 세 가지 affinity annotation이 필요한가? | Istio에는 해당 annotation 개념이 없으므로, 실제 응답 헤더 크기와 쿠키 동작을 직접 관찰해야 합니다 |
+| `proxy-buffer-size` 없이 큰 응답 헤더를 처리할 수 있는가? | 리허설한 AKS/Istio 버전에서는 별도 NGINX annotation 없이 8/16/32 KiB 응답 헤더가 모두 200으로 관찰됐습니다 |
+| `proxy-buffers`와 `proxy-busy-buffers-size`도 이번 시험으로 검증됐는가? | 아닙니다. 두 설정은 응답 본문 버퍼링과 관련되므로 별도의 본문 또는 스트리밍 시험이 필요합니다 |
 | 엔드포인트가 바뀌면 어떤 일이 일어나는가? | 같은 쿠키라도 hash ring 멤버십 변화 때문에 다른 파드로 재매핑될 수 있습니다 |
 | 32 KiB 성공이 무제한 헤더 처리를 뜻하는가? | 아닙니다. 리허설한 AKS/Istio 버전에서 그 크기까지 관찰됐다는 뜻만 제공합니다 |
 
