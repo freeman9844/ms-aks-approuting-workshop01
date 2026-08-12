@@ -84,6 +84,8 @@ flowchart LR
 
 07과 08은 기존 Application Routing Gateway 상태를 변경하는 옵션입니다. 09는 별도 클러스터를 사용하므로 02 이후 독립적으로 수행할 수 있으며, 07·08 전후에도 실행할 수 있습니다.
 
+09 옵션의 2026-08-12 Korea Central 검증에서는 큰 응답 헤더가 `8/16/32 KiB → 200 / 8192·16384·32768 bytes`, 큰 응답 본문이 `8/16/32 KiB → 200 / 8192·16384·32768 bytes`로 관찰됐습니다. 다만 이 고정 크기 본문 시험만으로 streaming 또는 busy-buffer semantics 전체가 증명되는 것은 아닙니다.
+
 ---
 
 ## 시간표
@@ -121,8 +123,6 @@ flowchart LR
 | Istio Gateway용 Azure Standard LB (옵션 09) | — | `Gateway/istio-session-gateway`가 자동 생성하며 10 모듈까지 과금됩니다 |
 
 실습 종료 후 반드시 **10 — 정리** 모듈을 실행해 두 AKS 클러스터와 생성된 두 개의 노드 리소스 그룹까지 모두 삭제하세요.
-
-09 옵션의 2026-08-12 Korea Central 검증에서는 큰 응답 헤더가 `8/16/32 KiB → 200 / 8192·16384·32768 bytes`, 큰 응답 본문이 `8/16/32 KiB → 200 / 8192·16384·32768 bytes`로 관찰됐습니다. 다만 이 고정 크기 본문 시험만으로 streaming 또는 busy-buffer semantics 전체가 증명되는 것은 아닙니다.
 
 ---
 

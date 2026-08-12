@@ -14,19 +14,19 @@ flowchart LR
   client[Client]
 
   subgraph original["기존 AKS — Application Routing"]
-    appGw["GatewayClass approuting-istio\n기존 Gateway"]
+    appGw["GatewayClass approuting-istio<br/>기존 Gateway"]
     originalRoute[기존 HTTPRoute]
     originalSvc[기존 Service]
     appGw --> originalRoute --> originalSvc
   end
 
   subgraph istioAks["추가 AKS — Istio 옵션 09"]
-    istioGw["GatewayClass istio\nistio-session-gateway"]
-    route["HTTPRoute\nistio-session-test"]
-    svc["Service\nistio-session-test"]
+    istioGw["GatewayClass istio<br/>istio-session-gateway"]
+    route["HTTPRoute<br/>istio-session-test"]
+    svc["Service<br/>istio-session-test"]
     podA[Pod A]
     podB[Pod B]
-    dr["DestinationRule\nconsistentHash.httpCookie"]
+    dr["DestinationRule<br/>consistentHash.httpCookie"]
     istioGw --> route --> svc
     svc --> podA
     svc --> podB
@@ -827,8 +827,11 @@ Switched to context "aks-approuting-ws-35448".
 BEFORE=Enabled  AFTER=Enabled
 NAME              CONTROLLER                               ACCEPTED   AGE
 approuting-istio  istio.aks.azure.com/gateway-controller   True       2h
+No resources found
 aks-approuting-ws-35448
 ```
+
+03을 이미 수행했다면 `No resources found` 대신 기존 Gateway 목록이 보일 수 있습니다. 그 경우에도 **모듈 09 전후로 같은 Gateway 상태가 유지되는지**를 비교하면 됩니다.
 
 원래 kubectl context로 돌아왔으면 03–08 실습을 계속 진행할 수 있고, 이번 모듈에서 만든 별도 Istio 클러스터 리소스는 10 모듈에서 정리하면 됩니다.
 
