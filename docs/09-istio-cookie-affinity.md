@@ -6,7 +6,7 @@
 
 > **독립 옵션 모듈**: [02 — 환경 준비](02-environment-setup.md) 이후 언제든 수행할 수 있습니다. 기존 `$CLUSTER`와 `approuting-istio` Gateway는 변경하지 않고, 같은 리소스 그룹에 Istio 전용 AKS 클러스터를 하나 더 만듭니다. 완료 후 원래 kubectl context로 복귀하므로 03–08을 계속 진행하거나 [10 — 정리](10-cleanup.md)로 이동할 수 있습니다.
 
-이 옵션은 **원래 Application Routing 클러스터를 유지한 채**, 같은 리소스 그룹에 `aks-istio-$SUFFIX` 클러스터를 추가로 만들고 그 안에서 `GatewayClass/istio`, `HTTPRoute`, `DestinationRule`을 사용해 쿠키 기반 일관 해시와 큰 응답 헤더 동작을 관찰하는 실험입니다. 이번 세션 테스트의 HTTP 요청·Gateway·Pod 관찰값은 모두 **새 Istio 클러스터**에서만 발생하며, 원래 `$CLUSTER`는 기준선 확인과 마지막 복귀 검증 용도로만 사용합니다.
+이 옵션은 **원래 Application Routing 클러스터를 유지한 채**, 같은 리소스 그룹에 `aks-istio-$SUFFIX` 클러스터를 추가로 만들고 그 안에서 `GatewayClass/istio`, `HTTPRoute`, `DestinationRule`을 사용해 쿠키 기반 일관 해시와 **큰 응답 헤더·큰 응답 본문 동작**을 관찰하는 실험입니다. 이번 세션 테스트의 HTTP 요청·Gateway·Pod 관찰값은 모두 **새 Istio 클러스터**에서만 발생하며, 원래 `$CLUSTER`는 기준선 확인과 마지막 복귀 검증 용도로만 사용합니다.
 
 👁️ **예시**
 ```mermaid
@@ -37,7 +37,7 @@ flowchart LR
   client --> istioGw
 ```
 
-`DestinationRule`은 Kubernetes Service를 대체하는 리소스가 아니라, **Istio 프록시가 해당 Service의 엔드포인트를 어떤 규칙으로 고를지**를 정의합니다. 따라서 이번 모듈의 관찰 포인트는 “원래 `approuting-istio` 경로는 그대로 둔 채, 별도 Istio 클러스터에서 쿠키 기반 endpoint selection과 응답 헤더 관찰이 어떻게 보이느냐”입니다.
+`DestinationRule`은 Kubernetes Service를 대체하는 리소스가 아니라, **Istio 프록시가 해당 Service의 엔드포인트를 어떤 규칙으로 고를지**를 정의합니다. 따라서 이번 모듈의 관찰 포인트는 “원래 `approuting-istio` 경로는 그대로 둔 채, 별도 Istio 클러스터에서 쿠키 기반 endpoint selection과 **응답 헤더·응답 본문 관찰**이 어떻게 보이느냐”입니다.
 
 | 비교 항목 | `approuting-istio` | `istio` | 이번 모듈에서의 의미 |
 |-----------|--------------------|---------|----------------------|
@@ -714,9 +714,9 @@ done
 
 📋 **예상 출력**
 ```text
-8 KiB: status=200 header_bytes=8192 pod=istio-session-test-8649fc85c6-9848l
-16 KiB: status=200 header_bytes=16384 pod=istio-session-test-8649fc85c6-hgswb
-32 KiB: status=200 header_bytes=32768 pod=istio-session-test-8649fc85c6-9848l
+8 KiB: status=200 header_bytes=8192 pod=istio-session-test-<pod-name>
+16 KiB: status=200 header_bytes=16384 pod=istio-session-test-<pod-name>
+32 KiB: status=200 header_bytes=32768 pod=istio-session-test-<pod-name>
 ```
 
 위 세 줄은 **2026-08-12 Korea Central focused live 검증에서 `/body` 추가 후 다시 확인한 실제 요약값**입니다. 이 블록은 sticky cookie를 재사용하지 않으므로 요청마다 선택된 Pod가 달라질 수 있습니다. 실제 실습에서 16 KiB 또는 32 KiB가 다른 상태 코드로 보이면, 이번 문서의 목적은 값을 억지로 성공시키는 것이 아니라 **관측된 상태 코드와 바이트 길이를 그대로 기록하는 것**입니다. Envoy 설정을 바꿔 결과를 맞추지 말고, 현재 AKS/Istio 버전에서 어떤 값이 관찰됐는지 남기세요.
@@ -751,9 +751,9 @@ rm -rf "$COOKIE_DIR"
 
 📋 **예상 출력**
 ```text
-8 KiB: status=200 body_bytes=8192 pod=istio-session-test-8649fc85c6-9848l
-16 KiB: status=200 body_bytes=16384 pod=istio-session-test-8649fc85c6-9848l
-32 KiB: status=200 body_bytes=32768 pod=istio-session-test-8649fc85c6-9848l
+8 KiB: status=200 body_bytes=8192 pod=istio-session-test-<pod-name>
+16 KiB: status=200 body_bytes=16384 pod=istio-session-test-<pod-name>
+32 KiB: status=200 body_bytes=32768 pod=istio-session-test-<pod-name>
 ```
 
 위 세 줄은 **2026-08-12 Korea Central focused live 검증에서 실제로 관찰한 요약값**입니다. `/body?size=8|16|32`는 모두 HTTP `200`을 반환했고, 본문 길이도 각각 `8192/16384/32768` bytes로 정확히 일치했습니다.
