@@ -498,4 +498,4 @@ AFD HTTPS 경유: 200
 
 ---
 
-[← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) 또는 [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | 다음: [10 — 정리](10-cleanup.md)
+[← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) 또는 [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | 다음: [09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md) 또는 [10 — 정리](10-cleanup.md)

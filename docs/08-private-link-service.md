@@ -4,14 +4,14 @@
 
 예상 소요 시간: 15–20분
 
-> **옵션 모듈**: 이 모듈은 선택 사항입니다. [05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) 완료 후 진행하세요. [07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) 및 [09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md)과는 다른 경로이며, 완료 후에는 private 상태를 유지한 채 [10 — 정리](10-cleanup.md)로 이동합니다.
+> **옵션 모듈**: 이 모듈은 선택 사항입니다. [05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) 완료 후 진행하세요. [07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md)은 기존 public 경로를 유지해야 하지만, [09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md)은 같은 리소스 그룹의 **다른 AKS 클러스터**에서 독립적으로 진행됩니다. 이 모듈을 마치면 private 상태를 유지한 채 [09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md) 또는 [10 — 정리](10-cleanup.md)로 이동할 수 있습니다.
 
 이 모듈은 `Gateway.spec.infrastructure.annotations`에 넣은 `azure-pls-*` 값이 Application Routing이 생성한 `Service/httpbin-gateway-approuting-istio`까지 전달되고, 그 결과 AKS 노드 리소스 그룹에 Azure Private Link Service가 생기는지 검증하는 실험입니다. 같은 managed Istio 계열의 AKS Gateway API 문서는 Gateway에 annotation을 추가해 internal load balancer 같은 LoadBalancer 설정을 커스터마이징할 수 있다고 설명하고, AKS internal LB 문서와 `cloud-provider-azure` 문서는 `azure-pls-*`가 `type: LoadBalancer` Service용 어노테이션임을 설명합니다. 즉, 여기서 확인하려는 질문은 “Gateway API가 PLS를 직접 지원하느냐”가 아니라 **“Application Routing이 Gateway annotation을 generated Service에 그대로 전달하느냐”** 입니다.
 
 - 05 완료가 필수다.
-- 07 AFD·08 PLS·09 Istio 옵션은 서로 다른 종착 경로다.
 - 07 완료 후 08을 실행하면 AFD public origin이 끊기므로 이어서 실행하지 않는다.
-- 08 완료 후 private 상태를 유지하고 10 정리로 이동한다.
+- 09는 같은 `$RESOURCE_GROUP`의 다른 AKS 클러스터를 사용하므로 08의 private Gateway 상태와 독립적으로 진행된다.
+- 08 완료 후 private 상태를 유지하고 09 또는 10 정리로 이동한다.
 
 참고: [Application Routing Gateway API](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api) · [Istio Gateway API customizations](https://learn.microsoft.com/en-us/azure/aks/istio-gateway-api) · [AKS internal LB + Private Link Service](https://learn.microsoft.com/en-us/azure/aks/internal-lb#connect-azure-private-link-service-to-an-aks-internal-load-balancer) · [cloud-provider-azure PLS annotations](https://cloud-provider-azure.sigs.k8s.io/topics/pls-integration/)
 
@@ -321,4 +321,4 @@ HTTP_CODE=200
 
 ---
 
-[← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) · [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | 다음: [10 — 정리](10-cleanup.md)
+[← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) · [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | 다음: [09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md) 또는 [10 — 정리](10-cleanup.md)

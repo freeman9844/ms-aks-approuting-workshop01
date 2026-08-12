@@ -188,4 +188,4 @@ Gateway API CRD 6종(backendtlspolicies 포함)이 모두 확인되고, `istiod-
 
 ---
 
-[← 01 — 사전 준비](01-prerequisites.md) | 다음: [03 — Gateway·HTTPRoute로 HTTP 노출](03-gateway-httproute.md)
+[← 01 — 사전 준비](01-prerequisites.md) | 다음: [03 — Gateway·HTTPRoute로 HTTP 노출](03-gateway-httproute.md) 또는 [09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md)
