@@ -767,13 +767,13 @@ rm -rf "$COOKIE_DIR"
 
 ## 8. 결과 해석
 
-| 질문 | 기록할 결과 |
-|------|-------------|
-| `DestinationRule`이 NGINX cookie affinity를 그대로 대체할 수 있는가? | 쿠키 키 기반의 일관 라우팅은 가능하지만, 완전히 동일한 영속 sticky semantics는 아닙니다 |
-| `proxy-buffer-size` 없이 큰 응답 헤더를 처리할 수 있는가? | 리허설한 AKS/Istio 버전에서는 별도 NGINX annotation 없이 8/16/32 KiB 응답 헤더가 모두 200으로 관찰됐습니다 |
-| `proxy-buffers`와 `proxy-busy-buffers-size`는 어떻게 관찰하는가? | `/body?size=8\|16\|32`로 고정 크기 본문 전달을 확인하고, streaming 동작은 별도 시험으로 확장합니다 |
-| 엔드포인트가 바뀌면 어떤 일이 일어나는가? | 같은 쿠키라도 hash ring 멤버십 변화 때문에 다른 파드로 재매핑될 수 있습니다 |
-| 이번 테스트의 트래픽 경로는 어디인가? | Gateway·HTTPRoute·DestinationRule·Pod 관찰값은 `$ISTIO_CLUSTER`에서 발생합니다 |
+| 질문 | 2026-08-12 Korea Central 리허설 기준 해석 |
+|------|------------------------------------------|
+| `DestinationRule`이 NGINX cookie affinity를 그대로 대체할 수 있는가? | 동일 쿠키를 사용한 5회 요청은 같은 Pod로 전달됐고, 해당 Pod 삭제 후에는 다른 Pod로 재매핑됐습니다. 쿠키 기반 affinity는 동작하지만 외부 저장소형 영속 세션 매핑과는 동작 방식이 다릅니다 |
+| `proxy-buffer-size` 없이 큰 응답 헤더를 처리할 수 있는가? | 별도 NGINX annotation 없이 8/16/32 KiB 응답 헤더가 모두 HTTP `200`을 반환했고, 헤더 값도 각각 `8192/16384/32768` bytes로 확인됐습니다 |
+| `proxy-buffers`와 `proxy-busy-buffers-size`는 어떻게 관찰하는가? | 8/16/32 KiB 응답 본문이 모두 HTTP `200`을 반환했고, 본문 길이도 각각 `8192/16384/32768` bytes로 확인됐습니다. streaming 동작은 별도 시험 범위입니다 |
+| 엔드포인트가 바뀌면 어떤 일이 일어나는가? | sticky 대상 Pod를 삭제한 뒤 같은 쿠키가 새 Pod로 재매핑되어, endpoint 집합 변경이 기존 세션의 대상 선택에 반영됨을 확인했습니다 |
+| 이번 테스트의 트래픽 경로는 어디인가? | Gateway·HTTPRoute·DestinationRule·Pod 테스트는 `$ISTIO_CLUSTER`에서 수행됐고, 원래 Gateway UID·주소와 Application Routing mode는 전후 동일하게 유지됐습니다 |
 
 ---
 
