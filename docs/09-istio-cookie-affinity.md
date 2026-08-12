@@ -773,7 +773,7 @@ rm -rf "$COOKIE_DIR"
 | `proxy-buffer-size` 없이 큰 응답 헤더를 처리할 수 있는가? | 별도 NGINX annotation 없이 8/16/32 KiB 응답 헤더가 모두 HTTP `200`을 반환했고, 헤더 값도 각각 `8192/16384/32768` bytes로 확인됐습니다 |
 | `proxy-buffers`와 `proxy-busy-buffers-size`는 어떻게 관찰하는가? | 8/16/32 KiB 응답 본문이 모두 HTTP `200`을 반환했고, 본문 길이도 각각 `8192/16384/32768` bytes로 확인됐습니다. streaming 동작은 별도 시험 범위입니다 |
 | 엔드포인트가 바뀌면 어떤 일이 일어나는가? | sticky 대상 Pod를 삭제한 뒤 같은 쿠키가 새 Pod로 재매핑되어, endpoint 집합 변경이 기존 세션의 대상 선택에 반영됨을 확인했습니다 |
-| 이번 테스트의 트래픽 경로는 어디인가? | Gateway·HTTPRoute·DestinationRule·Pod 테스트는 `$ISTIO_CLUSTER`에서 수행됐고, 원래 Gateway UID·주소와 Application Routing mode는 전후 동일하게 유지됐습니다 |
+| 이번 테스트의 트래픽 경로는 어디인가? | Gateway·HTTPRoute·DestinationRule·Pod 테스트는 `$ISTIO_CLUSTER`에서 수행됐고, 원래 클러스터는 전후 모두 Application Routing mode가 `Enabled`였으며 `kubectl get gateway -A` 결과도 전후 모두 `No resources found`였습니다 |
 
 ---
 
