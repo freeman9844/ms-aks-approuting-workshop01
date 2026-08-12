@@ -2,7 +2,7 @@
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
-예상 소요 시간: 25–35분 (신규 AKS 클러스터와 Gateway Load Balancer 생성 대기 포함, 리허설 후 실측값으로 갱신)
+예상 소요 시간: 8–12분 (2026-08-12 Korea Central 리허설 실측: 원래 Gateway 보존 검증 포함 약 9분, 대부분 두 번째 AKS 클러스터 생성 대기)
 
 > **독립 옵션 모듈**: [02 — 환경 준비](02-environment-setup.md) 이후 언제든 수행할 수 있습니다. 기존 `$CLUSTER`와 `approuting-istio` Gateway는 변경하지 않고, 같은 리소스 그룹에 Istio 전용 AKS 클러스터를 하나 더 만듭니다. 완료 후 원래 kubectl context로 복귀하므로 03–08을 계속 진행하거나 [10 — 정리](10-cleanup.md)로 이동할 수 있습니다.
 
@@ -176,8 +176,8 @@ printf 'export REVISION=%q\n' "$REVISION" >> ~/.approuting-ws-env
 
 📋 **예상 출력**
 ```text
-ISTIO_K8S_VERSION=1.33.4  REVISION=asm-1-30
-EFFECTIVE_K8S_VERSION=1.33.4  EFFECTIVE_REVISION=asm-1-30
+ISTIO_K8S_VERSION=1.35  REVISION=asm-1-30
+EFFECTIVE_K8S_VERSION=1.35  EFFECTIVE_REVISION=asm-1-30
 ```
 
 이미 같은 이름의 클러스터가 있더라도, 마지막 fail-fast 검사가 **Istio mode 여부와 `asm-1-26` 이상 revision 여부**를 강제로 확인합니다. 즉, 이름만 같고 호환되지 않는 클러스터는 여기서 바로 중단됩니다.
@@ -243,10 +243,12 @@ NAME                                   CREATED AT
 gateways.gateway.networking.k8s.io     2026-08-12T06:10:34Z
 httproutes.gateway.networking.k8s.io   2026-08-12T06:10:34Z
 destinationrules.networking.istio.io   2026-08-12T06:10:34Z
-REVISION_ISTIOD_RUNNING=1
+REVISION_ISTIOD_RUNNING=2
 NAME    CONTROLLER                  ACCEPTED   AGE
 istio   istio.io/gateway-controller True       13m
 ```
+
+2026-08-12 Korea Central 리허설에서는 `istiod-$REVISION` 2개가 모두 `Running`이었고 `Pending`은 0개였습니다. 따라서 이 모듈은 기본 2노드 구성만으로 끝까지 진행됐고, 9절의 스케일 명령은 사용하지 않았습니다.
 
 ---
 
@@ -423,8 +425,8 @@ deployment.apps/istio-session-test created
 service/istio-session-test created
 deployment "istio-session-test" successfully rolled out
 NAME                                  READY   STATUS    RESTARTS   AGE
-istio-session-test-7d6f8d8458-9jpzm   1/1     Running   0          34s
-istio-session-test-7d6f8d8458-v6l8n   1/1     Running   0          34s
+istio-session-test-8649fc85c6-2vkcp   1/1     Running   0          12s
+istio-session-test-8649fc85c6-92pbm   1/1     Running   0          12s
 ```
 
 ---
@@ -562,13 +564,13 @@ done
 
 📋 **예상 출력**
 ```text
-set-cookie: workshop-session="7f6d9f84.1d8f0e3b7f8a9c1d"; Path=/
-{"pod":"istio-session-test-7d6f8d8458-9jpzm"}
-istio-session-test-7d6f8d8458-9jpzm
-istio-session-test-7d6f8d8458-9jpzm
-istio-session-test-7d6f8d8458-9jpzm
-istio-session-test-7d6f8d8458-9jpzm
-istio-session-test-7d6f8d8458-9jpzm
+set-cookie: workshop-session="6fe38894f0c3370c"; Path=/; HttpOnly
+{"pod":"istio-session-test-8649fc85c6-92pbm"}
+istio-session-test-8649fc85c6-92pbm
+istio-session-test-8649fc85c6-92pbm
+istio-session-test-8649fc85c6-92pbm
+istio-session-test-8649fc85c6-92pbm
+istio-session-test-8649fc85c6-92pbm
 ```
 
 여기서 `ttl: 0s`는 만료 시각을 고정하지 않는 **세션 쿠키**라는 뜻입니다. 같은 cookie jar를 계속 쓰는 동안에는 같은 파드가 반복 선택되지만, 브라우저를 닫거나 jar를 버리면 새로운 세션으로 다시 분산될 수 있습니다.
@@ -593,8 +595,8 @@ done | sort | uniq -c
 
 📋 **예상 출력**
 ```text
-      9 istio-session-test-7d6f8d8458-9jpzm
-     11 istio-session-test-7d6f8d8458-v6l8n
+     14 istio-session-test-8649fc85c6-2vkcp
+      6 istio-session-test-8649fc85c6-92pbm
 ```
 
 분산은 확률적입니다. 운이 나쁘면 20개 표본에서도 한 파드만 보일 수 있으므로, 그런 경우에는 먼저 **준비된 엔드포인트가 실제로 2개인지** 확인하고 새 jar 20개로 한 번 더 반복합니다.
@@ -635,8 +637,8 @@ echo "before=$STICKY_POD  after=$REMAPPED_POD"
 
 📋 **예상 출력**
 ```text
-pod "istio-session-test-7d6f8d8458-9jpzm" deleted
-before=istio-session-test-7d6f8d8458-9jpzm  after=istio-session-test-7d6f8d8458-v6l8n
+pod "istio-session-test-8649fc85c6-92pbm" deleted
+before=istio-session-test-8649fc85c6-92pbm  after=istio-session-test-8649fc85c6-pcn8p
 ```
 
 삭제 직후에는 EndpointSlice와 Envoy 설정 전파 중에 일시적인 503 또는 연결 실패가 발생할 수 있으므로, 최대 60초 동안 **HTTP 성공 응답의 비어 있지 않은 파드 이름**을 기다립니다. 빈 응답이나 JSON 파싱 실패는 재매핑 성공으로 인정하지 않습니다.
@@ -691,9 +693,9 @@ rm -rf "$COOKIE_DIR"
 
 📋 **예상 출력**
 ```text
-8 KiB: status=200 header_bytes=8192 pod=istio-session-test-8649fc85c6-dg828
-16 KiB: status=200 header_bytes=16384 pod=istio-session-test-8649fc85c6-dg828
-32 KiB: status=200 header_bytes=32768 pod=istio-session-test-8649fc85c6-dg828
+8 KiB: status=200 header_bytes=8192 pod=istio-session-test-8649fc85c6-pcn8p
+16 KiB: status=200 header_bytes=16384 pod=istio-session-test-8649fc85c6-pcn8p
+32 KiB: status=200 header_bytes=32768 pod=istio-session-test-8649fc85c6-pcn8p
 ```
 
 위 세 줄은 **2026-08-12 Korea Central 리허설에서 관찰한 실제 요약값**입니다. 실제 실습에서 16 KiB 또는 32 KiB가 다른 상태 코드로 보이면, 이번 문서의 목적은 값을 억지로 성공시키는 것이 아니라 **관측된 상태 코드와 바이트 길이를 그대로 기록하는 것**입니다. Envoy 설정을 바꿔 결과를 맞추지 말고, 현재 AKS/Istio 버전에서 어떤 값이 관찰됐는지 남기세요.
@@ -716,7 +718,7 @@ rm -rf "$COOKIE_DIR"
 
 ## 9. 필요할 때만 용량 회복
 
-이 절은 `aks-istio-system`의 `istiod` 또는 생성된 Gateway Pod가 `Pending`일 때만 사용합니다.
+이 절은 `aks-istio-system`의 `istiod` 또는 생성된 Gateway Pod가 `Pending`일 때만 사용합니다. 2026-08-12 Korea Central 리허설에서는 `Unschedulable`·`Insufficient cpu` 이벤트가 나오지 않아 기본 2노드로 충분했습니다.
 
 🟢 **실행**
 ```bash

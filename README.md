@@ -98,9 +98,9 @@ flowchart LR
 | 06 | Gateway 인프라 커스터마이징 (옵션) | 10–15분 | HPA 반영·내부 LB 재구성 대기 |
 | 07 | AFD 카나리 마이그레이션 (옵션) | 50–90분 | AFD 라우트·가중치 변경 전파 대기 (회당 5–30분) |
 | 08 | Gateway API Private Link Service 검증 (옵션) | 15–20분 (Private Endpoint 승인·ACI 통신 확인 대기 포함; 2026-08-11 리허설 실측: Gateway 패치→ACI HTTP 200 확인까지 순수 Azure 작업 시간 약 6분) | Private Endpoint 승인·ACI 통신 확인 |
-| 09 | Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션) | 25–35분 (신규 AKS·Istio control plane·Gateway LB 프로비저닝 대기 포함) | 두 번째 AKS 클러스터와 Gateway Load Balancer 프로비저닝 |
+| 09 | Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션) | 8–12분 (2026-08-12 Korea Central 리허설 실측: 원래 Gateway 보존 검증 포함 약 9분, `az aks create` 약 6분) | 두 번째 AKS 클러스터 생성 |
 | 10 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
-| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +15–20분, 09 옵션 +25–35분)** | |
+| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +15–20분, 09 옵션 +8–12분)** | |
 
 ---
 
@@ -117,10 +117,12 @@ flowchart LR
 | Azure Front Door Standard (옵션 07) | 기본요금 약 $35/월의 일할 + 요청·전송량 | 실습 1–1.5시간 기준 소액, 07 수행 시에만 생성 |
 | Azure Private Endpoint (옵션 08) | — | private path 검증용, PE 승인 대기 포함 (2026-08-11 리허설 실측: 생성 직후 자동 `Approved`, 모듈 실습 시간(약 10–15분) 동안만 유지) |
 | Azure Container Instances (옵션 08) | 짧은 실행 시간 기준 소액 | consumer VNet의 ACI로 private data path 확인 (2026-08-11 리허설 실측: 컨테이너 실행 시간 약 20–25초, 이미지 pull 포함) |
-| AKS Istio 옵션 클러스터 (옵션 09) | Standard_D2s_v5 × 2 | 기존 클러스터와 별도로 생성되어 10 모듈까지 유지됩니다. `Insufficient cpu` 확인 시에만 3노드로 확장합니다 |
+| AKS Istio 옵션 클러스터 (옵션 09) | Standard_D2s_v5 × 2 | 기존 클러스터와 별도로 생성되어 10 모듈까지 유지됩니다. `Insufficient cpu` 확인 시에만 3노드로 확장하며, 2026-08-12 Korea Central 리허설에서는 기본 2노드로 충분했습니다 |
 | Istio Gateway용 Azure Standard LB (옵션 09) | — | `Gateway/istio-session-gateway`가 자동 생성하며 10 모듈까지 과금됩니다 |
 
 실습 종료 후 반드시 **10 — 정리** 모듈을 실행해 두 AKS 클러스터와 생성된 두 개의 노드 리소스 그룹까지 모두 삭제하세요.
+
+09 옵션의 2026-08-12 Korea Central 리허설에서는 큰 응답 헤더가 `8 KiB → 200 / 8192 bytes`, `16 KiB → 200 / 16384 bytes`, `32 KiB → 200 / 32768 bytes`로 관찰됐습니다.
 
 ---
 
