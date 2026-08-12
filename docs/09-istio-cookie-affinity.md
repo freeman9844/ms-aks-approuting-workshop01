@@ -139,7 +139,7 @@ No resources found
 
 이 단계는 기존 managed GatewayClass를 cleanly 제거하는 절차입니다. `kubectl get gatewayclass`가 비어 있으면 정상입니다. `--disable-app-routing-istio`가 거부된다면, 아직 삭제되지 않은 기존 Gateway 리소스가 남아 있는지 먼저 다시 확인해야 합니다.
 
-⏳ **기다리는 동안 읽기**: 다음 절의 `az aks mesh enable`은 Istio control plane과 GatewayClass 기본값을 새로 배치하므로 수 분이 걸릴 수 있습니다. 기다리는 동안 위 비교 표와 아래의 쿠키 의미를 먼저 읽어 두세요. 이번 실습에서 `httpCookie.ttl: 0s`는 **브라우저 종료 시 사라지는 세션 쿠키**를 의미하며, “외부 저장소에 영구 매핑을 남기는 sticky session”과는 다릅니다.
+⏳ **기다리는 동안 읽기**: 다음 절의 `az aks mesh enable`은 Istio control plane과 GatewayClass 기본값을 새로 배치하므로 수 분이 걸릴 수 있습니다. 기다리는 동안 위 비교 표와 아래 쿠키 동작 설명을 먼저 읽어 두세요. 이번 실습에서 `httpCookie.ttl: 0s`는 **브라우저 종료 시 사라지는 세션 쿠키**를 의미하며, “외부 저장소에 영구 매핑을 남기는 sticky session”과는 다릅니다.
 
 ### 3.2 지원 revision 확인 후 별도 명령으로 Istio mesh enable
 
