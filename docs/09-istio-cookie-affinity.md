@@ -108,7 +108,7 @@ No resources found
 
 같은 이름의 `$ISTIO_CLUSTER`가 이미 있으면 먼저 재사용 가능한지 확인하고, 없으면 Korea Central의 기본 AKS 버전과 호환되는 Istio revision으로 새 클러스터를 만듭니다. 아래 블록은 **재사용 경로와 신규 생성 경로를 한 번에 처리**합니다.
 
-⏳ **기다리는 동안 읽기**: `az aks create`가 이 모듈의 가장 긴 대기 구간입니다. 새 클러스터가 올라오는 동안 아래 3–4절에 있는 `manifests/istio-session-test-app.yaml`과 `manifests/istio-session-test-routing.yaml` 전체 예시를 먼저 읽어 두면, 이후 apply 단계에서 각 필드의 의미를 빠르게 확인할 수 있습니다.
+⏳ **기다리는 동안 읽기**: `az aks create`가 이 모듈의 가장 긴 대기 구간입니다. 새 클러스터가 올라오는 동안 아래 3–4절에 있는 `테스트 애플리케이션 전체 YAML 보기`를 펼쳐서 읽고 `manifests/istio-session-test-routing.yaml`도 함께 살펴보면, 이후 apply 단계에서 각 필드의 의미를 빠르게 확인할 수 있습니다.
 
 🟢 **실행**
 ```bash
