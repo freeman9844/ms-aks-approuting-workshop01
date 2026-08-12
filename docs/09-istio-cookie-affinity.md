@@ -2,34 +2,51 @@
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
-예상 소요 시간: 15–20분 (2026-08-12 리허설 기준, add-on 전환과 Gateway Load Balancer 생성 대기 포함)
+예상 소요 시간: 25–35분 (신규 AKS 클러스터와 Gateway Load Balancer 생성 대기 포함, 리허설 후 실측값으로 갱신)
 
-> **종착형 옵션 모듈**: 05 또는 06 완료 후 선택합니다. 07 AFD·08 PLS와 서로 배타적인 종착 경로이며 순차 수행하지 않습니다. 완료 후 Application Routing Gateway API로 되돌리지 않고 [10 — 정리](10-cleanup.md)로 이동합니다.
+> **독립 옵션 모듈**: [02 — 환경 준비](02-environment-setup.md) 이후 언제든 수행할 수 있습니다. 기존 `$CLUSTER`와 `approuting-istio` Gateway는 변경하지 않고, 같은 리소스 그룹에 Istio 전용 AKS 클러스터를 하나 더 만듭니다. 완료 후 원래 kubectl context로 복귀하므로 03–08을 계속 진행하거나 [10 — 정리](10-cleanup.md)로 이동할 수 있습니다.
 
-이 옵션은 `approuting-istio` GatewayClass에서 시작한 현재 ingress 경로를 AKS Istio service mesh add-on의 `istio` GatewayClass로 전환한 뒤, `DestinationRule`의 `consistentHash.httpCookie`가 **같은 쿠키에는 같은 백엔드 파드를 반복 선택하고**, **엔드포인트 구성이 바뀌면 다른 파드로 재매핑될 수 있음**을 직접 확인하는 실험입니다. 마지막에는 애플리케이션이 반환하는 **큰 응답 헤더(8/16/32 KiB)** 가 현재 AKS/Istio 조합에서 어떻게 보이는지도 기록합니다.
+이 옵션은 **원래 Application Routing 클러스터를 유지한 채**, 같은 리소스 그룹에 `aks-istio-$SUFFIX` 클러스터를 추가로 만들고 그 안에서 `GatewayClass/istio`, `HTTPRoute`, `DestinationRule`을 사용해 쿠키 기반 일관 해시와 큰 응답 헤더 동작을 관찰하는 실험입니다. 이번 세션 테스트의 HTTP 요청·Gateway·Pod 관찰값은 모두 **새 Istio 클러스터**에서만 발생하며, 원래 `$CLUSTER`는 기준선 확인과 마지막 복귀 검증 용도로만 사용합니다.
 
 👁️ **예시**
 ```mermaid
 flowchart LR
-  client[Client] --> lb[Azure Load Balancer]
-  lb --> gw[GatewayClass istio\nGateway]
-  gw --> route[HTTPRoute]
-  route --> svc[Service]
-  svc --> podA[Pod A]
-  svc --> podB[Pod B]
-  dr[DestinationRule\nconsistentHash.httpCookie] -. Service endpoint selection .-> svc
+  client[Client]
+
+  subgraph original["기존 AKS — Application Routing"]
+    appGw["GatewayClass approuting-istio\n기존 Gateway"]
+    originalRoute[기존 HTTPRoute]
+    originalSvc[기존 Service]
+    appGw --> originalRoute --> originalSvc
+  end
+
+  subgraph istioAks["추가 AKS — Istio 옵션 09"]
+    istioGw["GatewayClass istio\nistio-session-gateway"]
+    route["HTTPRoute\nistio-session-test"]
+    svc["Service\nistio-session-test"]
+    podA[Pod A]
+    podB[Pod B]
+    dr["DestinationRule\nconsistentHash.httpCookie"]
+    istioGw --> route --> svc
+    svc --> podA
+    svc --> podB
+    dr -. endpoint selection .-> svc
+  end
+
+  client --> appGw
+  client --> istioGw
 ```
 
-`DestinationRule`은 Kubernetes Service를 대체하는 리소스가 아니라, **Istio 프록시가 해당 Service의 엔드포인트를 어떤 규칙으로 고를지**를 정의합니다. 따라서 이번 모듈의 관찰 포인트는 “Gateway API 객체를 그대로 둔 채, 데이터 평면을 `approuting-istio`에서 `istio`로 바꿨을 때 ingress Gateway가 쿠키 기반 일관 해시를 어떻게 적용하느냐”입니다.
+`DestinationRule`은 Kubernetes Service를 대체하는 리소스가 아니라, **Istio 프록시가 해당 Service의 엔드포인트를 어떤 규칙으로 고를지**를 정의합니다. 따라서 이번 모듈의 관찰 포인트는 “원래 `approuting-istio` 경로는 그대로 둔 채, 별도 Istio 클러스터에서 쿠키 기반 endpoint selection과 응답 헤더 관찰이 어떻게 보이느냐”입니다.
 
 | 비교 항목 | `approuting-istio` | `istio` | 이번 모듈에서의 의미 |
 |-----------|--------------------|---------|----------------------|
-| AKS add-on 성격 | application routing add-on이 관리하는 Gateway API 전용 데이터 평면 | AKS Istio service mesh add-on | `DestinationRule`을 쓰려면 `istio`로 전환해야 합니다 |
+| AKS add-on 성격 | application routing add-on이 관리하는 Gateway API 전용 데이터 평면 | AKS Istio service mesh add-on | 두 구현을 **서로 다른 클러스터에서 병렬 비교**합니다 |
 | Istio CRD | 제한적(일반적인 Istio CRD 없음) | `DestinationRule` 등 Istio CRD 지원 | 쿠키 일관 해시는 `DestinationRule`로 선언합니다 |
 | 앱 파드 sidecar | 자동 주입 경로 없음 | 네임스페이스 라벨로 선택적 주입 가능 | 이번 모듈은 **앱 파드에 sidecar를 넣지 않습니다** |
-| Gateway 리소스명 | `<gateway>-approuting-istio` | `<gateway>-istio` | 생성된 Gateway 프록시 이름이 바뀝니다 |
+| Gateway 리소스명 | 워크숍 기존 Gateway 이름 유지 | `istio-session-gateway` | 원래 Gateway와 별도 이름으로 공존합니다 |
 
-테스트 앱을 의도적으로 **uninjected(1/1)** 상태로 두는 이유도 여기에 있습니다. `DestinationRule`은 ingress Gateway의 Envoy가 해석해도 충분하며, 애플리케이션 파드에 sidecar까지 넣으면 큰 응답 헤더 관찰 결과에 두 번째 Envoy hop이 개입할 수 있습니다. 이번 실습의 응답 헤더 결과는 **ingress Gateway 경로의 관찰값**으로 읽어야 합니다.
+즉, 이번 실습의 핵심은 “원래 클러스터를 변환”하는 것이 아니라, **원래 클러스터는 그대로 두고 별도 Istio 클러스터에서 같은 종류의 세션 실험을 독립적으로 수행해 비교 포인트를 확보하는 것**입니다. `istio-session-test`는 원래 클러스터의 기존 워크로드를 데이터 소스로 사용하지 않습니다.
 
 ---
 
@@ -47,258 +64,480 @@ else
   cd ms-aks-approuting-workshop01
 fi
 source ~/.approuting-ws-env
-az aks get-credentials --resource-group "$RESOURCE_GROUP" --name "$CLUSTER" --overwrite-existing || true
-echo "RESOURCE_GROUP=$RESOURCE_GROUP  CLUSTER=$CLUSTER  LOCATION=$LOCATION"
-echo "APP_NAMESPACE=$APP_NAMESPACE"
-kubectl get gatewayclass approuting-istio
-kubectl get gateway httpbin-gateway -n "$APP_NAMESPACE"
-kubectl get httproute httpbin -n "$APP_NAMESPACE"
-export AKS_MINOR=$(az aks show -g "$RESOURCE_GROUP" -n "$CLUSTER" \
-  --query kubernetesVersion -o tsv | cut -d. -f1-2)
-export REVISION=$(az aks mesh get-revisions --location "$LOCATION" \
-  --query "meshRevisions[?compatibleWith[?name=='KubernetesOfficial' && contains(versions, '$AKS_MINOR')]].revision | [-1]" \
+az aks get-credentials \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "$CLUSTER" \
+  --overwrite-existing
+export ORIGINAL_CONTEXT=$(kubectl config current-context)
+export ISTIO_CLUSTER="aks-istio-$SUFFIX"
+export ORIGINAL_APP_ROUTING_MODE=$(az aks show \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "$CLUSTER" \
+  --query 'ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode' \
   -o tsv)
-export REVISION_MINOR=${REVISION##*-}
-echo "AKS_MINOR=$AKS_MINOR  REVISION=$REVISION"
-[ -n "$REVISION" ] && [ "$REVISION_MINOR" -ge 26 ] || {
-  echo "이 AKS 버전과 호환되는 asm-1-26 이상 revision을 찾지 못했습니다."
+echo "RESOURCE_GROUP=$RESOURCE_GROUP  LOCATION=$LOCATION"
+echo "ORIGINAL_CLUSTER=$CLUSTER  ORIGINAL_CONTEXT=$ORIGINAL_CONTEXT"
+echo "ISTIO_CLUSTER=$ISTIO_CLUSTER  APP_NAMESPACE=$APP_NAMESPACE"
+echo "ORIGINAL_APP_ROUTING_MODE=$ORIGINAL_APP_ROUTING_MODE"
+[ "$ORIGINAL_APP_ROUTING_MODE" = "Enabled" ] || {
+  echo "기존 클러스터의 Application Routing Istio가 Enabled 상태가 아닙니다."
   exit 1
 }
+kubectl get gatewayclass approuting-istio
+kubectl get gateway -A
 ```
 
 </details>
 
----
-
-## 1. 시작 상태 확인 — 지원되는 진입 경로만 허용
-
-이 모듈은 **05 또는 06을 마친 직후의 상태**만 지원합니다. 즉, `httpbin-gateway`와 `HTTPRoute/httpbin`이 아직 현재 ingress 경로를 담당하고 있어야 합니다. 위 0단계 명령에서 `kubectl get gateway httpbin-gateway`가 `NotFound`라면, 이미 다른 옵션 경로로 벗어났거나 필요한 선행 모듈을 완료하지 않은 것입니다.
-
-특히 07과 08은 현재 Gateway에 각각 **AFD public origin** 또는 **Private Link Service 상태**를 붙이는 경로이므로, 그 뒤 상태에서 이 모듈로 넘어오면 “현재 Gateway를 지우고 add-on을 바꾸는 단계”가 더 이상 안전하지 않습니다. 이 문서는 07·08 이후 상태에서 이어서 진행하는 경로를 지원하지 않습니다.
-
-`REVISION` 조회는 Korea Central에서 현재 클러스터의 Kubernetes minor 버전과 호환되는 Istio revision 후보 중 **가장 최신 값**을 고르고, 그 값이 `asm-1-26` 이상이 아니면 파괴적 단계 전에 즉시 멈춥니다. 즉, 여기서 실패하면 이후의 Gateway 삭제나 add-on 전환을 진행하지 않습니다.
+`kubectl get gateway -A`는 02 직후라면 아무 Gateway도 보여 주지 않을 수 있습니다. 그것도 정상입니다. 이 모듈의 불변 조건은 **원래 클러스터의 Application Routing profile이 `Enabled`이고 `GatewayClass/approuting-istio`가 수락되어 있으며, 모듈 09가 그 상태를 바꾸지 않는 것**입니다.
 
 📋 **예상 출력**
 ```text
-RESOURCE_GROUP=rg-approuting-ws-35448  CLUSTER=aks-approuting-ws-35448  LOCATION=koreacentral
-APP_NAMESPACE=workshop
-NAME              CONTROLLER                        ACCEPTED   AGE
-approuting-istio  istio.aks.azure.com/gateway-controller True   1h
-NAME              CLASS              ADDRESS          PROGRAMMED   AGE
-httpbin-gateway   approuting-istio   20.249.51.10     True         48m
-NAME      HOSTNAMES                                                  AGE
-httpbin   ["httpbin.ws35448.approuting-workshop.example"]            47m
-AKS_MINOR=1.33  REVISION=asm-1-27
+RESOURCE_GROUP=rg-approuting-ws-35448  LOCATION=koreacentral
+ORIGINAL_CLUSTER=aks-approuting-ws-35448  ORIGINAL_CONTEXT=aks-approuting-ws-35448
+ISTIO_CLUSTER=aks-istio-35448  APP_NAMESPACE=workshop
+ORIGINAL_APP_ROUTING_MODE=Enabled
+NAME              CONTROLLER                               ACCEPTED   AGE
+approuting-istio  istio.aks.azure.com/gateway-controller   True       1h
+No resources found
 ```
-
-여기서 `REVISION` 값은 예시입니다. 실제 실습에서는 지역과 시점에 따라 `asm-1-26`, `asm-1-27` 등으로 달라질 수 있습니다.
 
 ---
 
-## 2. 기존 Application Routing Gateway 데이터 평면 안전하게 제거
+## 1. 별도 Istio 클러스터 선택 — 기존 호환 클러스터 재사용 또는 새로 생성
 
-먼저 기존 `approuting-istio` Gateway 경로를 정리합니다. 목적은 httpbin 애플리케이션 자체를 지우는 것이 아니라, **현재 ingress Gateway와 그에 종속된 자동 생성 리소스**만 제거하는 것입니다.
+같은 이름의 `$ISTIO_CLUSTER`가 이미 있으면 먼저 재사용 가능한지 확인하고, 없으면 Korea Central의 기본 AKS 버전과 호환되는 Istio revision으로 새 클러스터를 만듭니다. 아래 블록은 **재사용 경로와 신규 생성 경로를 한 번에 처리**합니다.
 
-🟢 **실행**
-```bash
-kubectl delete httproute httpbin -n "$APP_NAMESPACE" --ignore-not-found
-kubectl delete gateway httpbin-gateway -n "$APP_NAMESPACE" --ignore-not-found
-kubectl delete configmap gw-options -n "$APP_NAMESPACE" --ignore-not-found
-kubectl wait --for=delete deployment/httpbin-gateway-approuting-istio \
-  -n "$APP_NAMESPACE" --timeout=300s
-kubectl wait --for=delete service/httpbin-gateway-approuting-istio \
-  -n "$APP_NAMESPACE" --timeout=300s
-kubectl get deployment,service,hpa,pdb -n "$APP_NAMESPACE" \
-  httpbin-gateway-approuting-istio 2>&1 || true
-```
-
-📋 **예상 출력**
-```text
-httproute.gateway.networking.k8s.io "httpbin" deleted
-gateway.gateway.networking.k8s.io "httpbin-gateway" deleted
-configmap "gw-options" deleted
-deployment.apps/httpbin-gateway-approuting-istio condition met
-service/httpbin-gateway-approuting-istio condition met
-Error from server (NotFound): deployments.apps "httpbin-gateway-approuting-istio" not found
-Error from server (NotFound): services "httpbin-gateway-approuting-istio" not found
-Error from server (NotFound): horizontalpodautoscalers.autoscaling "httpbin-gateway-approuting-istio" not found
-Error from server (NotFound): poddisruptionbudgets.policy "httpbin-gateway-approuting-istio" not found
-```
-
-핵심은 **HTTPRoute와 Gateway 삭제 후 자동 생성된 Deployment/Service/HPA/PDB가 함께 사라지는지**를 보는 것입니다. 2026-08-12 리허설에서는 Deployment보다 Service가 수십 초 늦게 사라졌으므로, Service 삭제까지 확인한 뒤에만 다음 disable 단계로 넘어갑니다. 반대로 원래의 `httpbin` 워크로드, DNS zone, Key Vault, 정적 공인 IP는 아직 리소스 그룹에 남아 있을 수 있습니다. 다만 이제 그 자원들은 **활성 ingress 경로**에 연결되어 있지 않습니다.
-
----
-
-## 3. add-on 전환 — `approuting-istio` 비활성화 후 `istio` 활성화
-
-### 3.1 Application Routing Istio만 먼저 끄기
+⏳ **기다리는 동안 읽기**: `az aks create`가 이 모듈의 가장 긴 대기 구간입니다. 새 클러스터가 올라오는 동안 아래 3–4절에 있는 `manifests/istio-session-test-app.yaml`과 `manifests/istio-session-test-routing.yaml` 전체 예시를 먼저 읽어 두면, 이후 apply 단계에서 각 필드의 의미를 빠르게 확인할 수 있습니다.
 
 🟢 **실행**
 ```bash
-az aks update \
+if az aks show \
   --resource-group "$RESOURCE_GROUP" \
-  --name "$CLUSTER" \
-  --disable-app-routing-istio \
-  -o none
-export APP_ROUTING_ISTIO_MODE=$(az aks show -g "$RESOURCE_GROUP" -n "$CLUSTER" \
-  --query 'ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode' -o tsv)
-echo "APP_ROUTING_ISTIO_MODE=$APP_ROUTING_ISTIO_MODE"
-[ "$APP_ROUTING_ISTIO_MODE" = "Disabled" ] || {
-  echo "Application Routing Istio가 아직 Disabled 상태가 아닙니다."
-  exit 1
-}
-kubectl get gatewayclass
-```
+  --name "$ISTIO_CLUSTER" \
+  -o none 2>/dev/null; then
+  echo "기존 Istio 옵션 클러스터를 재사용합니다: $ISTIO_CLUSTER"
+else
+  export ISTIO_K8S_VERSION=$(az aks get-versions \
+    --location "$LOCATION" \
+    --query "values[?isDefault].version | [0]" \
+    -o tsv)
+  export ISTIO_MINOR=$(echo "$ISTIO_K8S_VERSION" | cut -d. -f1-2)
+  export REVISION=$(az aks mesh get-revisions \
+    --location "$LOCATION" \
+    --query "meshRevisions[?compatibleWith[?name=='KubernetesOfficial' && contains(versions, '$ISTIO_MINOR')]].revision | [-1]" \
+    -o tsv)
+  echo "ISTIO_K8S_VERSION=$ISTIO_K8S_VERSION  REVISION=$REVISION"
+  [ -n "$ISTIO_K8S_VERSION" ] && [[ "$REVISION" =~ ^asm-1-([0-9]+)$ ]] \
+    && [ "${BASH_REMATCH[1]}" -ge 26 ] || {
+    echo "Korea Central 기본 AKS 버전과 호환되는 asm-1-26 이상 revision을 찾지 못했습니다."
+    exit 1
+  }
 
-📋 **예상 출력**
-```text
-APP_ROUTING_ISTIO_MODE=Disabled
-NAME               CONTROLLER                               ACCEPTED   AGE
-approuting-istio   istio.aks.azure.com/gateway-controller   True       18m
-istio-remote       istio.io/unmanaged-gateway               True       18m
-```
+  az aks create \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$ISTIO_CLUSTER" \
+    --location "$LOCATION" \
+    --kubernetes-version "$ISTIO_K8S_VERSION" \
+    --node-count 2 \
+    --node-vm-size Standard_D2s_v5 \
+    --enable-gateway-api \
+    --enable-asm \
+    --revision "$REVISION" \
+    --generate-ssh-keys
+fi
 
-이 단계의 확인 기준은 **GatewayClass 삭제 여부가 아니라**, 2절에서 기존 generated 리소스가 사라졌고 cluster profile의 `appRoutingIstio.mode` 값이 `Disabled`로 바뀌었는지입니다. 2026-08-12 Korea Central 리허설에서는 disable 이후에도 `approuting-istio`와 `istio-remote` GatewayClass 객체가 남아 있었지만, 그 상태에서 바로 다음 절의 `az aks mesh enable`이 정상 완료되었습니다. `--disable-app-routing-istio`가 거부된다면, 아직 삭제되지 않은 기존 Gateway 리소스가 남아 있는지 먼저 다시 확인해야 합니다.
-
-⏳ **기다리는 동안 읽기**: 다음 절의 `az aks mesh enable`은 Istio control plane과 GatewayClass 기본값을 새로 배치하므로 수 분이 걸릴 수 있습니다. 기다리는 동안 위 비교 표와 아래 쿠키 동작 설명을 먼저 읽어 두세요. 이번 실습에서 `httpCookie.ttl: 0s`는 **브라우저 종료 시 사라지는 세션 쿠키**를 의미하며, “외부 저장소에 영구 매핑을 남기는 sticky session”과는 다릅니다.
-
-### 3.2 지원 revision 확인 후 별도 명령으로 Istio mesh enable
-
-🟢 **실행**
-```bash
-az aks mesh get-revisions --location "$LOCATION" -o table
-az aks mesh enable \
+export ISTIO_K8S_VERSION=$(az aks show \
   --resource-group "$RESOURCE_GROUP" \
-  --name "$CLUSTER" \
-  --revision "$REVISION"
-```
-
-📋 **예상 출력**
-```text
-Revision    Upgrades            CompatibleWith      CompatibleVersions
-----------  ------------------  ------------------  ----------------------------------
-asm-1-28    asm-1-29, asm-1-30  KubernetesOfficial  1.30, 1.31, 1.32, 1.33, 1.34, 1.35
-asm-1-29    asm-1-30            KubernetesOfficial  1.31, 1.32, 1.33, 1.34, 1.35, 1.36
-asm-1-30    None available      KubernetesOfficial  1.32, 1.33, 1.34, 1.35, 1.36
-```
-
-### 3.3 설치된 revision과 GatewayClass 기본값 검증
-
-🟢 **실행**
-```bash
-export INSTALLED_REVISION=$(az aks show \
+  --name "$ISTIO_CLUSTER" \
+  --query kubernetesVersion -o tsv)
+export REVISION=$(az aks show \
   --resource-group "$RESOURCE_GROUP" \
-  --name "$CLUSTER" \
+  --name "$ISTIO_CLUSTER" \
   --query 'serviceMeshProfile.istio.revisions[0]' -o tsv)
-echo "REQUESTED=$REVISION  INSTALLED=$INSTALLED_REVISION"
-[ "$(az aks show -g "$RESOURCE_GROUP" -n "$CLUSTER" \
+[[ "$REVISION" =~ ^asm-1-([0-9]+)$ ]] && [ "${BASH_REMATCH[1]}" -ge 26 ] || {
+  echo "기존 또는 신규 클러스터의 Istio revision이 asm-1-26 이상이 아닙니다."
+  exit 1
+}
+echo "EFFECTIVE_K8S_VERSION=$ISTIO_K8S_VERSION  EFFECTIVE_REVISION=$REVISION"
+```
+
+🟢 **실행**
+```bash
+sed -i \
+  -e '/^export ISTIO_CLUSTER=/d' \
+  -e '/^export ISTIO_K8S_VERSION=/d' \
+  -e '/^export REVISION=/d' \
+  ~/.approuting-ws-env
+printf 'export ISTIO_CLUSTER=%q\n' "$ISTIO_CLUSTER" >> ~/.approuting-ws-env
+printf 'export ISTIO_K8S_VERSION=%q\n' "$ISTIO_K8S_VERSION" >> ~/.approuting-ws-env
+printf 'export REVISION=%q\n' "$REVISION" >> ~/.approuting-ws-env
+```
+
+📋 **예상 출력**
+```text
+ISTIO_K8S_VERSION=1.33.4  REVISION=asm-1-30
+EFFECTIVE_K8S_VERSION=1.33.4  EFFECTIVE_REVISION=asm-1-30
+```
+
+이미 같은 이름의 클러스터가 있더라도, 마지막 fail-fast 검사가 **Istio mode 여부와 `asm-1-26` 이상 revision 여부**를 강제로 확인합니다. 즉, 이름만 같고 호환되지 않는 클러스터는 여기서 바로 중단됩니다.
+
+---
+
+## 2. 두 번째 클러스터 자격 증명, control plane, 네임스페이스 준비
+
+이제 kubectl context를 `$ISTIO_CLUSTER`로 전환하고, Istio control plane·Gateway API CRD·`DestinationRule` CRD·앱 네임스페이스의 uninjected 상태를 한 번에 확인합니다.
+
+🟢 **실행**
+```bash
+az aks get-credentials \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "$ISTIO_CLUSTER" \
+  --context "$ISTIO_CLUSTER" \
+  --overwrite-existing
+kubectl config use-context "$ISTIO_CLUSTER"
+[ "$(az aks show -g "$RESOURCE_GROUP" -n "$ISTIO_CLUSTER" \
   --query 'serviceMeshProfile.mode' -o tsv)" = "Istio" ] || {
-  echo "Istio service mesh add-on 활성화에 실패했습니다."
+  echo "두 번째 클러스터의 Istio service mesh add-on이 활성화되지 않았습니다."
   exit 1
 }
-[ "$INSTALLED_REVISION" = "$REVISION" ] || {
-  echo "요청한 Istio revision과 설치된 revision이 다릅니다."
-  exit 1
-}
-kubectl get deployment -n aks-istio-system -l app=istiod
-kubectl get pods -n aks-istio-system
-export REVISION_ISTIOD_RUNNING=$(kubectl get pods -n aks-istio-system \
-  -l app=istiod --field-selector=status.phase=Running -o name |
-  grep -Ec "^pod/istiod-$REVISION-")
+kubectl wait \
+  --for=condition=Accepted=True \
+  gatewayclass/istio \
+  --timeout=300s
+kubectl get crd \
+  gateways.gateway.networking.k8s.io \
+  httproutes.gateway.networking.k8s.io \
+  destinationrules.networking.istio.io
+export REVISION_ISTIOD_RUNNING=$(kubectl get pods \
+  -n aks-istio-system \
+  -l app=istiod \
+  --field-selector=status.phase=Running \
+  -o name | grep -Ec "^pod/istiod-$REVISION-")
 echo "REVISION_ISTIOD_RUNNING=$REVISION_ISTIOD_RUNNING"
 [ "$REVISION_ISTIOD_RUNNING" -ge 1 ] || {
-  echo "요청한 revision의 istiod Running 파드를 찾지 못했습니다."
+  echo "요청 revision의 Running istiod 파드를 찾지 못했습니다."
   exit 1
 }
+kubectl create namespace "$APP_NAMESPACE" \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace "$APP_NAMESPACE" istio.io/rev- 2>/dev/null || true
+kubectl label namespace "$APP_NAMESPACE" istio-injection- 2>/dev/null || true
 kubectl get gatewayclass istio
-kubectl get crd destinationrules.networking.istio.io
-kubectl get configmap istio-gateway-class-defaults -n aks-istio-system \
-  -o jsonpath='{.metadata.labels.gateway\.istio\.io/defaults-for-class}'; echo
+kubectl get pods -n aks-istio-system
+kubectl get namespace "$APP_NAMESPACE" --show-labels
 ```
+
+진행 기준은 다음 다섯 가지입니다.
+
+1. `serviceMeshProfile.mode=Istio`
+2. `GatewayClass/istio Accepted=True`
+3. Gateway API CRD와 `DestinationRule` CRD 존재
+4. `istiod-$REVISION` Running Pod 최소 1개
+5. `$APP_NAMESPACE`가 존재하고 injection 라벨이 없음
 
 📋 **예상 출력**
 ```text
-REQUESTED=asm-1-30  INSTALLED=asm-1-30
-NAME              READY   UP-TO-DATE   AVAILABLE   AGE
-istiod-asm-1-30   1/2     2            1           13m
-NAME                               READY   STATUS    RESTARTS   AGE
-istiod-asm-1-30-5b7d4749fb-q5bpx   1/1     Running   0          13m
-istiod-asm-1-30-5b7d4749fb-qsgl7   0/1     Pending   0          13m
+gatewayclass.gateway.networking.k8s.io/istio condition met
+NAME                                   CREATED AT
+gateways.gateway.networking.k8s.io     2026-08-12T06:10:34Z
+httproutes.gateway.networking.k8s.io   2026-08-12T06:10:34Z
+destinationrules.networking.istio.io   2026-08-12T06:10:34Z
 REVISION_ISTIOD_RUNNING=1
 NAME    CONTROLLER                  ACCEPTED   AGE
 istio   istio.io/gateway-controller True       13m
-NAME                                   CREATED AT
-destinationrules.networking.istio.io   2026-08-12T06:10:34Z
-istio
 ```
-
-마지막 줄의 `istio`가 가장 중요한 확인값입니다. 2026-08-12 리허설에서는 2노드 `Standard_D2s_v5` 워크숍 클러스터에서 두 번째 `istiod`가 `Pending(Insufficient cpu)`로 남았지만, 요청한 revision 설치·`GatewayClass/istio` 수락·4절의 실제 Gateway `Programmed=True`까지는 정상적으로 확인됐습니다. 따라서 이 문서에서는 deployment 전체 `Available=True` 대신, **요청 revision 설치 + 이름이 `istiod-$REVISION-...` 인 Running 파드 최소 1개 + `GatewayClass/istio` 수락**을 진행 기준으로 삼습니다. 이 이름 기반 게이트는 요청한 revision과 무관한 다른 Istio 관련 파드를 잘못 통과시키지 않도록 하기 위한 장치입니다.
 
 ---
 
-## 4. uninjected 테스트 앱과 Istio 라우팅 리소스 배포
+## 3. 테스트 애플리케이션 매니페스트 확인 후 배포
 
-이제 Tasks 1–2에서 준비해 둔 두 매니페스트를 적용합니다. 여기서 중요한 점은 **앱 네임스페이스에 injection 라벨을 남기지 않는 것**입니다. Gateway 리소스만 `${REVISION}` 라벨로 특정 revision에 고정되고, 애플리케이션 파드는 일반 Kubernetes 파드(1/1)로 유지됩니다.
+앱 매니페스트는 **별도 이미지 빌드 없이** Pod identity와 큰 응답 헤더를 반환하는 테스트 서버를 ConfigMap으로 제공하고, 파드를 2개 띄워 쿠키 기반 선택과 재매핑을 관찰할 수 있게 합니다.
+
+👁️ **예시** — `manifests/istio-session-test-app.yaml` 전체
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio-session-test
+data:
+  server.py: |
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlparse
+
+    POD_NAME = os.environ["POD_NAME"]
+    ALLOWED_HEADER_KIB = {8, 16, 32}
+
+
+    class Handler(BaseHTTPRequestHandler):
+        def send_json(self, status, payload, large_header_bytes=0):
+            body = json.dumps(payload, separators=(",", ":")).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-Workshop-Pod", POD_NAME)
+            if large_header_bytes:
+                self.send_header("X-Workshop-Large-Header", "x" * large_header_bytes)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            request = urlparse(self.path)
+            if request.path == "/healthz":
+                self.send_json(200, {"status": "ok", "pod": POD_NAME})
+                return
+            if request.path == "/identity":
+                self.send_json(200, {"pod": POD_NAME})
+                return
+            if request.path == "/headers":
+                values = parse_qs(request.query).get("size", [])
+                try:
+                    size_kib = int(values[0])
+                except (IndexError, ValueError):
+                    self.send_json(400, {"error": "size must be 8, 16, or 32"})
+                    return
+                if size_kib not in ALLOWED_HEADER_KIB:
+                    self.send_json(400, {"error": "size must be 8, 16, or 32"})
+                    return
+                self.send_json(
+                    200,
+                    {"pod": POD_NAME, "header_kib": size_kib},
+                    large_header_bytes=size_kib * 1024,
+                )
+                return
+            self.send_json(404, {"error": "not found"})
+
+        def log_message(self, format, *args):
+            print(f"{self.client_address[0]} {format % args}", flush=True)
+
+
+    ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: istio-session-test
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: istio-session-test
+  template:
+    metadata:
+      labels:
+        app: istio-session-test
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: app
+        image: python:3.12-alpine
+        command: ["python", "/app/server.py"]
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        ports:
+        - name: http
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 2
+          periodSeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 20m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: app
+          mountPath: /app
+          readOnly: true
+      volumes:
+      - name: app
+        configMap:
+          name: istio-session-test
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: istio-session-test
+spec:
+  selector:
+    app: istio-session-test
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+```
+
+| 필드 | 역할 |
+|------|------|
+| `ConfigMap.data.server.py` | 별도 이미지 빌드 없이 Pod identity와 큰 응답 헤더를 반환하는 테스트 서버를 제공합니다 |
+| `replicas: 2` | 서로 다른 두 엔드포인트에서 쿠키 기반 선택과 재매핑을 관찰합니다 |
+| `POD_NAME` downward API | 응답 JSON과 `X-Workshop-Pod` 헤더에 실제 Pod 이름을 넣습니다 |
+| `/identity` | 현재 선택된 Pod를 JSON으로 반환합니다 |
+| `/headers?size=8\|16\|32` | 허용된 크기의 `X-Workshop-Large-Header` 응답 헤더를 생성합니다 |
+| non-root `securityContext` | 테스트 컨테이너를 root 권한 없이 실행합니다 |
+| `Service/istio-session-test:80` | HTTPRoute와 DestinationRule이 공통으로 참조하는 백엔드입니다 |
 
 🟢 **실행**
 ```bash
-kubectl label namespace "$APP_NAMESPACE" istio.io/rev- 2>/dev/null || true
-kubectl label namespace "$APP_NAMESPACE" istio-injection- 2>/dev/null || true
-kubectl apply -n "$APP_NAMESPACE" -f manifests/istio-session-test-app.yaml
-envsubst < manifests/istio-session-test-routing.yaml |
-  kubectl apply -n "$APP_NAMESPACE" -f -
+kubectl apply \
+  -n "$APP_NAMESPACE" \
+  -f manifests/istio-session-test-app.yaml
 kubectl rollout status deployment/istio-session-test \
-  -n "$APP_NAMESPACE" --timeout=300s
-kubectl wait --for=condition=programmed gateway/istio-session-gateway \
-  -n "$APP_NAMESPACE" --timeout=300s
-kubectl get pods -n "$APP_NAMESPACE" -l app=istio-session-test
-kubectl get gateway,httproute,destinationrule -n "$APP_NAMESPACE"
+  -n "$APP_NAMESPACE" \
+  --timeout=300s
+kubectl get pods \
+  -n "$APP_NAMESPACE" \
+  -l app=istio-session-test
 ```
+
+앱 파드 두 개가 모두 `1/1`이어야 정상입니다. `2/2`로 보이면 sidecar가 주입된 것이므로, 아래 트러블슈팅의 namespace label 점검으로 돌아가세요.
 
 📋 **예상 출력**
 ```text
-namespace/workshop not labeled
-namespace/workshop not labeled
 configmap/istio-session-test created
 deployment.apps/istio-session-test created
 service/istio-session-test created
-gateway.gateway.networking.k8s.io/istio-session-gateway created
-httproute.gateway.networking.k8s.io/istio-session-test created
-destinationrule.networking.istio.io/istio-session-test created
 deployment "istio-session-test" successfully rolled out
-gateway.gateway.networking.k8s.io/istio-session-gateway condition met
 NAME                                  READY   STATUS    RESTARTS   AGE
 istio-session-test-7d6f8d8458-9jpzm   1/1     Running   0          34s
 istio-session-test-7d6f8d8458-v6l8n   1/1     Running   0          34s
+```
+
+---
+
+## 4. 라우팅 매니페스트 확인 후 배포
+
+이제 Gateway·HTTPRoute·DestinationRule을 한 번에 적용합니다. `Gateway`는 `$REVISION`에 고정되고, `DestinationRule`은 `workshop-session` 쿠키를 endpoint 선택 키로 사용합니다.
+
+👁️ **예시** — `manifests/istio-session-test-routing.yaml` 전체
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: istio-session-gateway
+  labels:
+    istio.io/rev: ${REVISION}
+spec:
+  gatewayClassName: istio
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: istio-session-test
+spec:
+  parentRefs:
+  - name: istio-session-gateway
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: istio-session-test
+      port: 80
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: istio-session-test
+spec:
+  host: istio-session-test
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpCookie:
+          name: workshop-session
+          path: /
+          ttl: 0s
+```
+
+| 필드 | 역할 |
+|------|------|
+| `gatewayClassName: istio` | 두 번째 클러스터의 AKS Istio service mesh GatewayClass를 사용합니다 |
+| `istio.io/rev: ${REVISION}` | 여러 revision이 공존할 때 이 Gateway를 소유할 control plane revision을 고정합니다 |
+| `allowedRoutes.namespaces.from: Same` | 같은 네임스페이스의 HTTPRoute만 Gateway에 연결합니다 |
+| `parentRefs[].name` | HTTPRoute를 `istio-session-gateway`에 연결합니다 |
+| `backendRefs[].name/port` | 요청을 `istio-session-test:80`으로 전달합니다 |
+| `DestinationRule.spec.host` | 정책을 동일한 Service 이름에 적용합니다 |
+| `consistentHash.httpCookie.name` | `workshop-session` 쿠키 값을 endpoint 선택 키로 사용합니다 |
+| `ttl: 0s` | 브라우저 종료 시 사라지는 세션 쿠키로 발급합니다 |
+
+파일에는 `${REVISION}` 문자열이 그대로 들어 있습니다. 아래 `envsubst`가 현재 클러스터에 설치된 revision 값으로 치환한 결과를 `kubectl apply`에 전달합니다.
+
+🟢 **실행**
+```bash
+envsubst < manifests/istio-session-test-routing.yaml |
+  kubectl apply -n "$APP_NAMESPACE" -f -
+kubectl wait \
+  --for=condition=Programmed=True \
+  gateway/istio-session-gateway \
+  -n "$APP_NAMESPACE" \
+  --timeout=300s
+kubectl get gateway,httproute,destinationrule \
+  -n "$APP_NAMESPACE"
+kubectl get httproute istio-session-test \
+  -n "$APP_NAMESPACE" \
+  -o jsonpath='{range .status.parents[0].conditions[*]}{.type}={.status}{"\n"}{end}'
+export ISTIO_GATEWAY_IP=$(kubectl get gateway istio-session-gateway \
+  -n "$APP_NAMESPACE" \
+  -o jsonpath='{.status.addresses[0].value}')
+echo "ISTIO_GATEWAY_IP=$ISTIO_GATEWAY_IP"
+```
+
+다음 네 가지가 모두 충족돼야 트래픽 테스트로 넘어갑니다.
+
+1. `Gateway/istio-session-gateway Programmed=True`
+2. `HTTPRoute Accepted=True`
+3. `HTTPRoute ResolvedRefs=True`
+4. `ISTIO_GATEWAY_IP`가 비어 있지 않음
+
+📋 **예상 출력**
+```text
+gateway.gateway.networking.k8s.io/istio-session-gateway created
+httproute.gateway.networking.k8s.io/istio-session-test created
+destinationrule.networking.istio.io/istio-session-test created
+gateway.gateway.networking.k8s.io/istio-session-gateway condition met
 NAME                                             CLASS   ADDRESS        PROGRAMMED   AGE
 gateway.gateway.networking.k8s.io/istio-session-gateway   istio   20.249.51.44   True         31s
 NAME                                                 HOSTNAMES   AGE
 httproute.gateway.networking.k8s.io/istio-session-test                31s
 NAME                                               HOST                AGE
 destinationrule.networking.istio.io/istio-session-test   istio-session-test   31s
-```
-
-파드 READY가 `1/1` 인 것이 정상입니다. 이 실습에서는 `DestinationRule`을 **Istio Gateway 프록시가 해석하는 것만으로 충분**하며, 애플리케이션에 sidecar를 넣지 않기 때문에 큰 응답 헤더 결과도 ingress Gateway 경로의 영향만 관찰할 수 있습니다. 생성되는 Gateway 프록시 리소스 이름은 `istio-session-gateway-istio` 형태입니다.
-
-라우팅 조건과 공인 주소도 이어서 확인합니다.
-
-🟢 **실행**
-```bash
-kubectl get httproute istio-session-test -n "$APP_NAMESPACE" \
-  -o jsonpath='{range .status.parents[0].conditions[*]}{.type}={.status}{"\n"}{end}'
-export ISTIO_GATEWAY_IP=$(kubectl get gateway istio-session-gateway \
-  -n "$APP_NAMESPACE" -o jsonpath='{.status.addresses[0].value}')
-echo "ISTIO_GATEWAY_IP=$ISTIO_GATEWAY_IP"
-```
-
-📋 **예상 출력**
-```text
 Accepted=True
 ResolvedRefs=True
 ISTIO_GATEWAY_IP=20.249.51.44
 ```
-
-`Accepted=True`와 `ResolvedRefs=True`가 둘 다 보여야 다음 단계로 진행합니다.
 
 ---
 
@@ -463,19 +702,77 @@ rm -rf "$COOKIE_DIR"
 
 ---
 
-## 8. 결과 해석과 정리 방향
+## 8. 결과 해석
 
 | 질문 | 기록할 결과 |
-|------|-------------------|
+|------|-------------|
 | `DestinationRule`이 NGINX cookie affinity를 그대로 대체할 수 있는가? | 쿠키 키 기반의 일관 라우팅은 가능하지만, 완전히 동일한 영속 sticky semantics는 아닙니다 |
 | `proxy-buffer-size` 없이 큰 응답 헤더를 처리할 수 있는가? | 리허설한 AKS/Istio 버전에서는 별도 NGINX annotation 없이 8/16/32 KiB 응답 헤더가 모두 200으로 관찰됐습니다 |
 | `proxy-buffers`와 `proxy-busy-buffers-size`도 이번 시험으로 검증됐는가? | 아닙니다. 두 설정은 응답 본문 버퍼링과 관련되므로 별도의 본문 또는 스트리밍 시험이 필요합니다 |
 | 엔드포인트가 바뀌면 어떤 일이 일어나는가? | 같은 쿠키라도 hash ring 멤버십 변화 때문에 다른 파드로 재매핑될 수 있습니다 |
-| 32 KiB 성공이 무제한 헤더 처리를 뜻하는가? | 아닙니다. 리허설한 AKS/Istio 버전에서 그 크기까지 관찰됐다는 뜻만 제공합니다 |
+| 원래 Application Routing 클러스터가 이번 테스트의 트래픽 경로인가? | 아닙니다. 이번 테스트의 Gateway·HTTPRoute·DestinationRule·Pod 관찰값은 모두 `$ISTIO_CLUSTER`에서만 발생합니다 |
 
-이 모듈은 Application Routing의 `approuting-istio` 경로와 Istio `DestinationRule` 기반 경로가 **겉으로는 비슷해 보여도 세션 의미론과 운영 포인트가 다르다**는 점을 보여 줍니다. 또한 응답 헤더 크기 결과도 “이 버전에서 이렇게 보였다”는 관찰값이지, 영구 보장 사양이 아닙니다.
+---
 
-완료 후에는 Application Routing Gateway API로 되돌리지 말고 바로 [10 — 정리](10-cleanup.md)로 이동합니다. 07 AFD와 08 PLS는 현재 Gateway를 다시 바꾸는 다른 종착형 경로이므로, 이 모듈 뒤에 이어서 수행하지 않습니다.
+## 9. 필요할 때만 용량 회복
+
+이 절은 `aks-istio-system`의 `istiod` 또는 생성된 Gateway Pod가 `Pending`일 때만 사용합니다.
+
+🟢 **실행**
+```bash
+kubectl get pods -A --field-selector=status.phase=Pending
+kubectl get events -A --sort-by=.lastTimestamp | tail -30
+```
+
+이벤트 출력에 **`Unschedulable`와 `Insufficient cpu`가 둘 다 보일 때만** 아래 스케일 명령을 사용합니다. revision 문제, 이미지 pull 실패, quota, Load Balancer 오류에는 이 명령을 대응책으로 쓰지 않습니다.
+
+🟢 **실행**
+```bash
+az aks scale \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "$ISTIO_CLUSTER" \
+  --node-count 3
+kubectl wait \
+  --for=condition=Programmed=True \
+  gateway/istio-session-gateway \
+  -n "$APP_NAMESPACE" \
+  --timeout=300s
+```
+
+---
+
+## 10. 원래 클러스터 context 복귀와 불변성 검증
+
+이 모듈의 마지막 단계는 **원래 클러스터가 실제로 바뀌지 않았는지** 다시 확인하는 것입니다. 모듈 09에서 만든 리소스는 `$ISTIO_CLUSTER`에 남아 있으며, [10 — 정리](10-cleanup.md)에서 함께 삭제합니다.
+
+🟢 **실행**
+```bash
+kubectl config use-context "$ORIGINAL_CONTEXT"
+export FINAL_APP_ROUTING_MODE=$(az aks show \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "$CLUSTER" \
+  --query 'ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode' \
+  -o tsv)
+echo "BEFORE=$ORIGINAL_APP_ROUTING_MODE  AFTER=$FINAL_APP_ROUTING_MODE"
+[ "$FINAL_APP_ROUTING_MODE" = "$ORIGINAL_APP_ROUTING_MODE" ] || {
+  echo "기존 클러스터의 Application Routing 상태가 달라졌습니다."
+  exit 1
+}
+kubectl get gatewayclass approuting-istio
+kubectl get gateway -A
+kubectl config current-context
+```
+
+📋 **예상 출력**
+```text
+Switched to context "aks-approuting-ws-35448".
+BEFORE=Enabled  AFTER=Enabled
+NAME              CONTROLLER                               ACCEPTED   AGE
+approuting-istio  istio.aks.azure.com/gateway-controller   True       2h
+aks-approuting-ws-35448
+```
+
+원래 kubectl context로 돌아왔으면 03–08 실습을 계속 진행할 수 있고, 이번 모듈에서 만든 별도 Istio 클러스터 리소스는 10 모듈에서 정리하면 됩니다.
 
 ---
 
@@ -483,16 +780,15 @@ rm -rf "$COOKIE_DIR"
 
 | 증상 | 원인 | 진단 | 조치 |
 |------|------|------|------|
-| `az aks update --disable-app-routing-istio`가 기존 Gateway가 남아 있다고 거부됨 | `httpbin-gateway` 또는 `HTTPRoute/httpbin`이 아직 삭제되지 않음 | `kubectl get gateway,httproute -n $APP_NAMESPACE`로 남아 있는 객체를 확인합니다 | 2절 명령을 다시 실행해 기존 Gateway와 HTTPRoute를 먼저 제거한 뒤 add-on disable을 재시도합니다 |
-| `az aks mesh enable`이 conflict 또는 이미 다른 add-on이 활성화됐다고 실패함 | Application Routing Istio disable이 아직 cluster profile에 반영되지 않았거나 기존 generated Service 삭제가 끝나지 않음 | `az aks show -g $RESOURCE_GROUP -n $CLUSTER --query 'ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode' -o tsv`와 `kubectl get svc httpbin-gateway-approuting-istio -n $APP_NAMESPACE`로 현재 상태를 확인합니다 | `appRoutingIstio.mode`가 `Disabled`이고 generated Service가 사라질 때까지 기다린 뒤 별도 명령으로 다시 `az aks mesh enable`을 실행합니다 |
-| `istiod` Deployment가 `1/2 Available`이거나 `kubectl get pods -n aks-istio-system`에 `Pending`이 남음 | 2노드 `Standard_D2s_v5` 워크숍 클러스터의 남는 CPU가 부족해 두 번째 control plane replica가 스케줄되지 않음 | `kubectl get deployment -n aks-istio-system -l app=istiod`, `kubectl get pods -n aks-istio-system`, `kubectl get events -n aks-istio-system --sort-by=.lastTimestamp \| tail -20`로 `Insufficient cpu`를 확인합니다 | 요청한 revision이 설치되었고 최소 1개의 `istiod-$REVISION` 파드가 `1/1 Running`, `GatewayClass/istio`가 `Accepted=True`이면 4절로 진행합니다. 이후 `Gateway/istio-session-gateway`가 `Programmed=False`로 머무르면 노드를 늘리거나 다른 워크로드를 줄입니다 |
-| 설치된 revision이 `asm-1-26`보다 낮거나 비어 있음 | 지역/버전 호환 revision 조회 결과가 요구 조건을 만족하지 않음 | `echo $REVISION`과 `az aks mesh get-revisions --location $LOCATION -o table`로 후보를 다시 봅니다 | fail-fast 체크를 유지한 채 진행을 중단하고, 지원되는 AKS minor 버전 또는 지역 조합으로 다시 준비합니다 |
-| 테스트 파드가 `1/1`이 아니라 `2/2`로 올라옴 | 네임스페이스에 기존 injection 라벨이 남아 sidecar가 주입됨 | `kubectl get ns $APP_NAMESPACE --show-labels`와 `kubectl get pods -n $APP_NAMESPACE -l app=istio-session-test`로 상태를 확인합니다 | `kubectl label namespace "$APP_NAMESPACE" istio.io/rev-` 및 `kubectl label namespace "$APP_NAMESPACE" istio-injection-`로 라벨을 제거한 뒤 Deployment를 재시작합니다 |
-| `Gateway/istio-session-gateway`가 `Programmed=False`이거나 생성된 Gateway 파드가 `Pending` | 노드 CPU 여유가 부족해 새 Gateway 프록시를 스케줄하지 못함 | `kubectl get deployment,service -n $APP_NAMESPACE istio-session-gateway-istio`, `kubectl get pods -n $APP_NAMESPACE`, `kubectl describe pod <gateway-pod>`로 `Insufficient cpu` 이벤트를 확인합니다 | 노드 수를 늘리거나 다른 워크로드를 줄인 뒤 Gateway가 `Programmed=True`가 될 때까지 다시 확인합니다 |
-| `Set-Cookie: workshop-session=` 헤더가 보이지 않음 | `DestinationRule` host 이름이 Service와 맞지 않거나 정책이 아직 적용되지 않음 | `kubectl get destinationrule istio-session-test -n $APP_NAMESPACE -o yaml`과 `kubectl get httproute istio-session-test -n $APP_NAMESPACE -o yaml`을 확인합니다 | `host: istio-session-test`와 `consistentHash.httpCookie` 블록이 그대로 있는지 확인하고 매니페스트를 다시 적용합니다 |
-| 독립 세션 20개를 돌려도 한 파드만 보임 | 실제 ready 엔드포인트가 1개뿐이거나 표본이 너무 적음 | `kubectl get endpointslice -n $APP_NAMESPACE -l kubernetes.io/service-name=istio-session-test`와 `kubectl get pods -n $APP_NAMESPACE -l app=istio-session-test`로 두 엔드포인트가 모두 준비됐는지 봅니다 | ready 엔드포인트 2개가 확인되면 새 cookie jar 20개로 다시 샘플링합니다 |
-| 16 KiB 또는 32 KiB에서 non-200이 반환됨 | 현재 Envoy/Gateway 경로의 응답 헤더 한계 또는 중간 프록시 동작이 관찰값에 반영됨 | `kubectl logs -n $APP_NAMESPACE deploy/istio-session-gateway-istio --tail=100` 또는 해당 Gateway 프록시 파드 로그에서 응답 플래그를 확인합니다 | 상태 코드와 헤더 바이트 길이를 그대로 기록하고, 필요하면 Envoy response flags를 함께 메모합니다 |
+| `ISTIO_K8S_VERSION` 또는 `REVISION` 값이 비어 있음 | 지역 기본 버전 또는 호환 revision 조회가 실패함 | `az aks get-versions --location "$LOCATION" -o table`와 `az aks mesh get-revisions --location "$LOCATION" -o table`로 값을 다시 조회합니다 | 클러스터 생성 전에 중단하고, 지원되는 버전·revision 조합을 다시 선택합니다 |
+| 기존 `$ISTIO_CLUSTER`가 `Istio` mode가 아니거나 revision이 `asm-1-26` 미만임 | 같은 이름의 비호환 클러스터가 이미 존재함 | `az aks show --resource-group "$RESOURCE_GROUP" --name "$ISTIO_CLUSTER" --query '{mode:serviceMeshProfile.mode, revision:serviceMeshProfile.istio.revisions[0], kubernetesVersion:kubernetesVersion}' -o yaml`로 상태를 확인합니다 | 새 `SUFFIX`를 사용해 다른 이름으로 만들거나, 기존 비호환 워크숍 클러스터를 제거한 뒤 다시 진행합니다 |
+| `az aks create`가 quota 또는 SKU capacity 오류로 실패함 | `StandardDSv5Family` 쿼터 부족 또는 지역 용량 부족 | Azure 오류 메시지와 구독 quota 상태를 확인합니다 | quota 증가 요청 또는 승인된 용량으로 재시도하고, 원래 `$CLUSTER`는 수정하지 않습니다 |
+| 요청한 revision의 `istiod`가 Running이 아님 | control plane 초기화 지연 또는 스케줄링 실패 | `kubectl get pods -n aks-istio-system`, `kubectl get events -n aks-istio-system --sort-by=.lastTimestamp \| tail -20`으로 원인을 봅니다 | 잠시 기다리고, `Unschedulable` + `Insufficient cpu`가 확인된 경우에만 9절의 scale 명령을 사용합니다 |
+| 생성된 Gateway Pod가 `Pending`이거나 `Gateway/istio-session-gateway`가 `Programmed=False`로 머묾 | Gateway 프록시가 스케줄되지 못함 | `kubectl get deployment,service -n "$APP_NAMESPACE" istio-session-gateway-istio`, `kubectl get pods -n "$APP_NAMESPACE"`, `kubectl get events -n "$APP_NAMESPACE" --sort-by=.lastTimestamp \| tail -20`로 상태를 확인합니다 | `Unschedulable` + `Insufficient cpu`가 확인될 때만 9절의 scale 명령으로 3노드까지 늘립니다 |
+| 테스트 파드가 `1/1`이 아니라 `2/2`로 표시됨 | namespace에 injection label이 남아 sidecar가 주입됨 | `kubectl get namespace "$APP_NAMESPACE" --show-labels`와 `kubectl get pods -n "$APP_NAMESPACE" -l app=istio-session-test`로 상태를 확인합니다 | `kubectl label namespace "$APP_NAMESPACE" istio.io/rev-`와 `kubectl label namespace "$APP_NAMESPACE" istio-injection-`로 라벨을 제거한 뒤 Deployment를 다시 시작합니다 |
+| 쿠키가 발급되지 않거나, 20개 샘플에서 엔드포인트가 하나만 보이거나, 재매핑이 시간 안에 끝나지 않거나, 큰 헤더에서 non-200이 보임 | `DestinationRule` 적용 지연, ready endpoint 부족, 빈 응답/JSON 파싱 실패, 현재 버전의 헤더 한계 등 관찰값이 섞여 있음 | `grep -i '^set-cookie: workshop-session=' "$RESPONSE_HEADERS"`, `kubectl get endpointslice -n "$APP_NAMESPACE" -l kubernetes.io/service-name=istio-session-test`, 그리고 6–7절의 hardened curl/jq 명령으로 비어 있지 않은 파드 이름과 상태 코드를 다시 확인합니다 | 빈 출력에 성공 판정을 내리지 말고, 기존 hardened 명령을 유지한 채 쿠키·엔드포인트·재매핑·헤더 바이트 수를 다시 기록합니다 |
+| 마지막 context 또는 profile 값이 시작 상태와 다름 | `ORIGINAL_CONTEXT`로 돌아오지 않았거나 원래 클러스터 profile이 외부에서 변경됨 | `kubectl config current-context`와 `echo "BEFORE=$ORIGINAL_APP_ROUTING_MODE  AFTER=$FINAL_APP_ROUTING_MODE"`를 비교합니다 | 먼저 `kubectl config use-context "$ORIGINAL_CONTEXT"`로 복귀하고, 값이 계속 다르면 원래 클러스터 profile drift를 별도로 진단합니다 |
 
 ---
 
-[← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) · [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | 다음: [10 — 정리](10-cleanup.md)
+[← 02 — 환경 준비](02-environment-setup.md) | 다음: [03 — Gateway·HTTPRoute로 HTTP 노출](03-gateway-httproute.md) 또는 [10 — 정리](10-cleanup.md)
