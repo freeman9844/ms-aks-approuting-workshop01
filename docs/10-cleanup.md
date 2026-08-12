@@ -120,4 +120,4 @@ rm -f ~/.approuting-ws-env ~/cert-policy.json
 
 ---
 
-[← 09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](09-istio-cookie-affinity.md) · [← 08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) · [← 07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) · [← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) · [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | [처음으로 (README)](../README.md)
+[← 09 — Istio Gateway API 쿠키 일관 해시·응답 헤더·본문 검증 (옵션)](09-istio-cookie-affinity.md) · [← 08 — Gateway API Private Link Service 검증 (옵션)](08-private-link-service.md) · [← 07 — AFD 카나리 마이그레이션 (옵션)](07-afd-canary-migration.md) · [← 06 — Gateway 인프라 커스터마이징 (옵션)](06-gateway-customizations.md) · [← 05 — TLS Gateway와 DNS A 레코드](05-tls-gateway-externaldns.md) | [처음으로 (README)](../README.md)

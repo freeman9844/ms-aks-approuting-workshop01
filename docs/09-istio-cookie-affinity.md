@@ -1,4 +1,4 @@
-# 09 — Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)
+# 09 — Istio Gateway API 쿠키 일관 해시·응답 헤더·본문 검증 (옵션)
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
@@ -254,7 +254,7 @@ istio   istio.io/gateway-controller True       13m
 
 ## 3. 테스트 애플리케이션 매니페스트 확인 후 배포
 
-앱 매니페스트는 **별도 이미지 빌드 없이** Pod identity와 큰 응답 헤더를 반환하는 테스트 서버를 ConfigMap으로 제공하고, 파드를 2개 띄워 쿠키 기반 선택과 재매핑을 관찰할 수 있게 합니다.
+앱 매니페스트는 **별도 이미지 빌드 없이** Pod identity와 큰 응답 헤더·본문을 반환하는 테스트 서버를 ConfigMap으로 제공하고, 파드를 2개 띄워 쿠키 기반 선택과 재매핑을 관찰할 수 있게 합니다.
 
 👁️ **예시** — `manifests/istio-session-test-app.yaml` 전체
 ```yaml
@@ -270,7 +270,7 @@ data:
     from urllib.parse import parse_qs, urlparse
 
     POD_NAME = os.environ["POD_NAME"]
-    ALLOWED_HEADER_KIB = {8, 16, 32}
+    ALLOWED_SIZE_KIB = {8, 16, 32}
 
 
     class Handler(BaseHTTPRequestHandler):
@@ -285,6 +285,26 @@ data:
             self.end_headers()
             self.wfile.write(body)
 
+        def send_bytes(self, status, body):
+            self.send_response(status)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-Workshop-Pod", POD_NAME)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def parse_size_kib(self, request):
+            values = parse_qs(request.query).get("size", [])
+            try:
+                size_kib = int(values[0])
+            except (IndexError, ValueError):
+                self.send_json(400, {"error": "size must be 8, 16, or 32"})
+                return None
+            if size_kib not in ALLOWED_SIZE_KIB:
+                self.send_json(400, {"error": "size must be 8, 16, or 32"})
+                return None
+            return size_kib
+
         def do_GET(self):
             request = urlparse(self.path)
             if request.path == "/healthz":
@@ -294,20 +314,20 @@ data:
                 self.send_json(200, {"pod": POD_NAME})
                 return
             if request.path == "/headers":
-                values = parse_qs(request.query).get("size", [])
-                try:
-                    size_kib = int(values[0])
-                except (IndexError, ValueError):
-                    self.send_json(400, {"error": "size must be 8, 16, or 32"})
-                    return
-                if size_kib not in ALLOWED_HEADER_KIB:
-                    self.send_json(400, {"error": "size must be 8, 16, or 32"})
+                size_kib = self.parse_size_kib(request)
+                if size_kib is None:
                     return
                 self.send_json(
                     200,
                     {"pod": POD_NAME, "header_kib": size_kib},
                     large_header_bytes=size_kib * 1024,
                 )
+                return
+            if request.path == "/body":
+                size_kib = self.parse_size_kib(request)
+                if size_kib is None:
+                    return
+                self.send_bytes(200, b"x" * (size_kib * 1024))
                 return
             self.send_json(404, {"error": "not found"})
 
@@ -395,11 +415,12 @@ spec:
 
 | 필드 | 역할 |
 |------|------|
-| `ConfigMap.data.server.py` | 별도 이미지 빌드 없이 Pod identity와 큰 응답 헤더를 반환하는 테스트 서버를 제공합니다 |
+| `ConfigMap.data.server.py` | 별도 이미지 빌드 없이 Pod identity와 큰 응답 헤더·본문을 반환하는 테스트 서버를 제공합니다 |
 | `replicas: 2` | 서로 다른 두 엔드포인트에서 쿠키 기반 선택과 재매핑을 관찰합니다 |
 | `POD_NAME` downward API | 응답 JSON과 `X-Workshop-Pod` 헤더에 실제 Pod 이름을 넣습니다 |
 | `/identity` | 현재 선택된 Pod를 JSON으로 반환합니다 |
 | `/headers?size=8\|16\|32` | 허용된 크기의 `X-Workshop-Large-Header` 응답 헤더를 생성합니다 |
+| `/body?size=8\|16\|32` | 허용된 크기의 응답 본문을 정확히 `size * 1024` bytes로 반환합니다 |
 | non-root `securityContext` | 테스트 컨테이너를 root 권한 없이 실행합니다 |
 | `Service/istio-session-test:80` | HTTPRoute와 DestinationRule이 공통으로 참조하는 백엔드입니다 |
 
@@ -647,17 +668,19 @@ before=istio-session-test-8649fc85c6-92pbm  after=istio-session-test-8649fc85c6-
 
 ---
 
-## 7. 8/16/32 KiB 큰 응답 헤더 관찰
+## 7. 8/16/32 KiB 큰 응답 헤더와 본문 관찰
 
-이 테스트는 요청 본문이 아니라 **응답 헤더 크기**를 관찰하는 실험입니다. 앱은 `X-Workshop-Large-Header`에 지정한 크기만큼 값을 채우고, 우리는 HTTP 상태 코드와 실제 헤더 바이트 길이만 요약해서 기록합니다.
+이 절은 `/headers?size=8|16|32`와 `/body?size=8|16|32`를 각각 호출해 **응답 헤더 크기**와 **응답 본문 크기**를 따로 관찰하는 실험입니다. 앱은 헤더 테스트에서 `X-Workshop-Large-Header`를, 본문 테스트에서 정확히 `size * 1024` bytes의 payload를 반환하고, 우리는 각 경우의 HTTP 상태 코드와 실제 바이트 수를 기록합니다.
 
 NGINX에서 사용하던 세 설정의 역할은 서로 다릅니다.
 
-- `nginx.ingress.kubernetes.io/proxy-buffer-size`: 업스트림 응답의 첫 부분, 특히 큰 응답 헤더를 읽는 버퍼입니다. 이번 8/16/32 KiB 시험이 **직접 확인하는 대상**입니다.
-- `nginx.ingress.kubernetes.io/proxy-buffers`: 업스트림 응답 본문을 저장하는 버퍼 수와 크기를 제어합니다.
-- `nginx.ingress.kubernetes.io/proxy-busy-buffers-size`: 클라이언트로 전송 중인 응답 버퍼의 최대 크기를 제어합니다.
+- `nginx.ingress.kubernetes.io/proxy-buffer-size`: 업스트림 응답의 첫 부분, 특히 큰 응답 헤더를 읽는 버퍼입니다. 아래 **헤더 테스트**가 직접 대응합니다.
+- `nginx.ingress.kubernetes.io/proxy-buffers`: 업스트림 응답 본문을 저장하는 버퍼 수와 크기를 제어합니다. 아래 **본문 테스트**는 이 영역을 관찰하는 출발점입니다.
+- `nginx.ingress.kubernetes.io/proxy-busy-buffers-size`: 클라이언트로 전송 중인 응답 버퍼의 최대 크기를 제어합니다. 역시 **본문 전달 과정**과 관련이 있습니다.
 
-따라서 이번 단일 대형 헤더 시험은 `proxy-buffer-size`에 대응하는 동작만 직접 관찰합니다. `proxy-buffers`와 `proxy-busy-buffers-size`가 담당하던 **응답 본문 버퍼링은 직접 검증하지 않습니다**. 두 설정까지 비교하려면 별도의 큰 응답 본문 또는 스트리밍 시험이 필요합니다.
+다만 **8/16/32 KiB 본문이 성공한다는 사실만으로** `proxy-buffers`·`proxy-busy-buffers-size`의 streaming/busy-buffer semantics 전체가 증명되지는 않습니다. 이 문서의 본문 테스트는 “현재 AKS/Istio 조합에서 이 크기의 응답 본문이 어떤 status와 byte 수로 보이는가”를 관찰하는 수준이며, 별도의 스트리밍·장시간 전송 시험을 대체하지 않습니다.
+
+### 7.1 큰 응답 헤더 관찰
 
 🟢 **실행**
 ```bash
@@ -687,20 +710,53 @@ for SIZE in 8 16 32; do
     "$SIZE" "$HTTP_CODE" "$HEADER_BYTES" "$POD"
   rm -f "$HEADER_FILE" "$BODY_FILE"
 done
+```
+
+📋 **예상 출력**
+```text
+8 KiB: status=200 header_bytes=8192 pod=istio-session-test-8649fc85c6-9848l
+16 KiB: status=200 header_bytes=16384 pod=istio-session-test-8649fc85c6-hgswb
+32 KiB: status=200 header_bytes=32768 pod=istio-session-test-8649fc85c6-9848l
+```
+
+위 세 줄은 **2026-08-12 Korea Central focused live 검증에서 `/body` 추가 후 다시 확인한 실제 요약값**입니다. 이 블록은 sticky cookie를 재사용하지 않으므로 요청마다 선택된 Pod가 달라질 수 있습니다. 실제 실습에서 16 KiB 또는 32 KiB가 다른 상태 코드로 보이면, 이번 문서의 목적은 값을 억지로 성공시키는 것이 아니라 **관측된 상태 코드와 바이트 길이를 그대로 기록하는 것**입니다. Envoy 설정을 바꿔 결과를 맞추지 말고, 현재 AKS/Istio 버전에서 어떤 값이 관찰됐는지 남기세요.
+
+### 7.2 큰 응답 본문 관찰
+
+🟢 **실행**
+```bash
+for SIZE in 8 16 32; do
+  HEADER_FILE=$(mktemp)
+  BODY_FILE=$(mktemp)
+  HTTP_CODE=$(curl -sS --max-time 15 \
+    -D "$HEADER_FILE" \
+    -o "$BODY_FILE" \
+    -w '%{http_code}' \
+    "http://$ISTIO_GATEWAY_IP/body?size=$SIZE")
+  BODY_BYTES=$(wc -c < "$BODY_FILE" | tr -d ' ')
+  POD=$(LC_ALL=C awk '
+    BEGIN { IGNORECASE=1 }
+    /^X-Workshop-Pod:/ {
+      sub(/\r$/, "")
+      sub(/^[^:]*: /, "")
+      print
+    }' "$HEADER_FILE")
+  printf '%s KiB: status=%s body_bytes=%s pod=%s\n' \
+    "$SIZE" "$HTTP_CODE" "$BODY_BYTES" "$POD"
+  rm -f "$HEADER_FILE" "$BODY_FILE"
+done
 rm -f "$COOKIE_JAR" "$RESPONSE_HEADERS" "$RESPONSE_BODY"
 rm -rf "$COOKIE_DIR"
 ```
 
 📋 **예상 출력**
 ```text
-8 KiB: status=200 header_bytes=8192 pod=istio-session-test-8649fc85c6-pcn8p
-16 KiB: status=200 header_bytes=16384 pod=istio-session-test-8649fc85c6-pcn8p
-32 KiB: status=200 header_bytes=32768 pod=istio-session-test-8649fc85c6-pcn8p
+8 KiB: status=200 body_bytes=8192 pod=istio-session-test-8649fc85c6-9848l
+16 KiB: status=200 body_bytes=16384 pod=istio-session-test-8649fc85c6-9848l
+32 KiB: status=200 body_bytes=32768 pod=istio-session-test-8649fc85c6-9848l
 ```
 
-위 세 줄은 **2026-08-12 Korea Central 리허설에서 관찰한 실제 요약값**입니다. 실제 실습에서 16 KiB 또는 32 KiB가 다른 상태 코드로 보이면, 이번 문서의 목적은 값을 억지로 성공시키는 것이 아니라 **관측된 상태 코드와 바이트 길이를 그대로 기록하는 것**입니다. Envoy 설정을 바꿔 결과를 맞추지 말고, 현재 AKS/Istio 버전에서 어떤 값이 관찰됐는지 남기세요.
-
-이 결과만으로 `proxy-buffers`와 `proxy-busy-buffers-size`에 해당하는 응답 본문 버퍼링까지 문제가 없다고 결론 내리면 안 됩니다.
+위 세 줄은 **2026-08-12 Korea Central focused live 검증에서 실제로 관찰한 요약값**입니다. `/body?size=8|16|32`는 모두 HTTP `200`을 반환했고, 본문 길이도 각각 `8192/16384/32768` bytes로 정확히 일치했습니다.
 
 ---
 
@@ -710,7 +766,7 @@ rm -rf "$COOKIE_DIR"
 |------|-------------|
 | `DestinationRule`이 NGINX cookie affinity를 그대로 대체할 수 있는가? | 쿠키 키 기반의 일관 라우팅은 가능하지만, 완전히 동일한 영속 sticky semantics는 아닙니다 |
 | `proxy-buffer-size` 없이 큰 응답 헤더를 처리할 수 있는가? | 리허설한 AKS/Istio 버전에서는 별도 NGINX annotation 없이 8/16/32 KiB 응답 헤더가 모두 200으로 관찰됐습니다 |
-| `proxy-buffers`와 `proxy-busy-buffers-size`도 이번 시험으로 검증됐는가? | 아닙니다. 두 설정은 응답 본문 버퍼링과 관련되므로 별도의 본문 또는 스트리밍 시험이 필요합니다 |
+| `proxy-buffers`와 `proxy-busy-buffers-size`는 어떻게 다뤄야 하는가? | `/body?size=8\|16\|32`로 기본 body buffering 관찰은 가능하지만, 그 성공만으로 streaming/busy-buffer semantics 전체가 증명되지는 않습니다 |
 | 엔드포인트가 바뀌면 어떤 일이 일어나는가? | 같은 쿠키라도 hash ring 멤버십 변화 때문에 다른 파드로 재매핑될 수 있습니다 |
 | 원래 Application Routing 클러스터가 이번 테스트의 트래픽 경로인가? | 아닙니다. 이번 테스트의 Gateway·HTTPRoute·DestinationRule·Pod 관찰값은 모두 `$ISTIO_CLUSTER`에서만 발생합니다 |
 
