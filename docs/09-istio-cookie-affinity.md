@@ -75,7 +75,7 @@ echo "AKS_MINOR=$AKS_MINOR  REVISION=$REVISION"
 RESOURCE_GROUP=rg-approuting-ws-35448  CLUSTER=aks-approuting-ws-35448  LOCATION=koreacentral
 APP_NAMESPACE=workshop
 NAME              CONTROLLER                        ACCEPTED   AGE
-approuting-istio  azure/application-routing-gateway True       1h
+approuting-istio  istio.aks.azure.com/gateway-controller True   1h
 NAME              CLASS              ADDRESS          PROGRAMMED   AGE
 httpbin-gateway   approuting-istio   20.249.51.10     True         48m
 NAME      HOSTNAMES                                                  AGE
@@ -132,14 +132,19 @@ az aks update \
   --name "$CLUSTER" \
   --disable-app-routing-istio \
   -o none
-az aks show -g "$RESOURCE_GROUP" -n "$CLUSTER" \
-  --query 'ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode' -o tsv
+export APP_ROUTING_ISTIO_MODE=$(az aks show -g "$RESOURCE_GROUP" -n "$CLUSTER" \
+  --query 'ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode' -o tsv)
+echo "APP_ROUTING_ISTIO_MODE=$APP_ROUTING_ISTIO_MODE"
+[ "$APP_ROUTING_ISTIO_MODE" = "Disabled" ] || {
+  echo "Application Routing Istio가 아직 Disabled 상태가 아닙니다."
+  exit 1
+}
 kubectl get gatewayclass
 ```
 
 📋 **예상 출력**
 ```text
-Disabled
+APP_ROUTING_ISTIO_MODE=Disabled
 NAME               CONTROLLER                               ACCEPTED   AGE
 approuting-istio   istio.aks.azure.com/gateway-controller   True       18m
 istio-remote       istio.io/unmanaged-gateway               True       18m
@@ -189,6 +194,14 @@ echo "REQUESTED=$REVISION  INSTALLED=$INSTALLED_REVISION"
 }
 kubectl get deployment -n aks-istio-system -l app=istiod
 kubectl get pods -n aks-istio-system
+export REVISION_ISTIOD_RUNNING=$(kubectl get pods -n aks-istio-system \
+  -l app=istiod --field-selector=status.phase=Running -o name |
+  grep -Ec "^pod/istiod-$REVISION-")
+echo "REVISION_ISTIOD_RUNNING=$REVISION_ISTIOD_RUNNING"
+[ "$REVISION_ISTIOD_RUNNING" -ge 1 ] || {
+  echo "요청한 revision의 istiod Running 파드를 찾지 못했습니다."
+  exit 1
+}
 kubectl get gatewayclass istio
 kubectl get crd destinationrules.networking.istio.io
 kubectl get configmap istio-gateway-class-defaults -n aks-istio-system \
@@ -203,6 +216,7 @@ istiod-asm-1-30   1/2     2            1           13m
 NAME                               READY   STATUS    RESTARTS   AGE
 istiod-asm-1-30-5b7d4749fb-q5bpx   1/1     Running   0          13m
 istiod-asm-1-30-5b7d4749fb-qsgl7   0/1     Pending   0          13m
+REVISION_ISTIOD_RUNNING=1
 NAME    CONTROLLER                  ACCEPTED   AGE
 istio   istio.io/gateway-controller True       13m
 NAME                                   CREATED AT
@@ -210,7 +224,7 @@ destinationrules.networking.istio.io   2026-08-12T06:10:34Z
 istio
 ```
 
-마지막 줄의 `istio`가 가장 중요한 확인값입니다. 2026-08-12 리허설에서는 2노드 `Standard_D2s_v5` 워크숍 클러스터에서 두 번째 `istiod`가 `Pending(Insufficient cpu)`로 남았지만, 요청한 revision 설치·`GatewayClass/istio` 수락·4절의 실제 Gateway `Programmed=True`까지는 정상적으로 확인됐습니다. 따라서 이 문서에서는 deployment 전체 `Available=True` 대신, **요청 revision 설치 + 최소 1개의 `istiod-$REVISION` 파드 `1/1 Running` + `GatewayClass/istio` 수락**을 진행 기준으로 삼습니다.
+마지막 줄의 `istio`가 가장 중요한 확인값입니다. 2026-08-12 리허설에서는 2노드 `Standard_D2s_v5` 워크숍 클러스터에서 두 번째 `istiod`가 `Pending(Insufficient cpu)`로 남았지만, 요청한 revision 설치·`GatewayClass/istio` 수락·4절의 실제 Gateway `Programmed=True`까지는 정상적으로 확인됐습니다. 따라서 이 문서에서는 deployment 전체 `Available=True` 대신, **요청 revision 설치 + 이름이 `istiod-$REVISION-...` 인 Running 파드 최소 1개 + `GatewayClass/istio` 수락**을 진행 기준으로 삼습니다. 이 이름 기반 게이트는 요청한 revision과 무관한 다른 Istio 관련 파드를 잘못 통과시키지 않도록 하기 위한 장치입니다.
 
 ---
 
