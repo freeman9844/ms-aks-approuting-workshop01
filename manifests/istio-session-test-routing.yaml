@@ -1,0 +1,45 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: istio-session-gateway
+  labels:
+    istio.io/rev: ${REVISION}
+spec:
+  gatewayClassName: istio
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: istio-session-test
+spec:
+  parentRefs:
+  - name: istio-session-gateway
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: istio-session-test
+      port: 80
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: istio-session-test
+spec:
+  host: istio-session-test
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpCookie:
+          name: workshop-session
+          path: /
+          ttl: 0s
