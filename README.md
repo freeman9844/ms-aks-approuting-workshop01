@@ -2,7 +2,7 @@
 
 Azure Kubernetes Service(AKS)의 **Application Routing 애드온**과 **Gateway API**를 사용해 httpbin 샘플 앱을 HTTP로 노출하고, Azure DNS 및 Key Vault TLS까지 적용하는 실습형 워크숍입니다. 전 과정을 Azure Cloud Shell(bash)에서 `az` CLI와 `kubectl`만으로 진행하며, 코어 실습 시간은 약 **1시간 10분–1시간 30분**입니다.
 
-07, 08, 09는 05/06 이후에 선택하는 서로 다른 옵션 경로입니다.
+07과 08은 기존 Application Routing 클러스터에서 수행하는 옵션이며, 09는 같은 리소스 그룹에 별도 Istio AKS 클러스터를 추가하는 독립 옵션입니다. 09는 02 이후 언제든 수행할 수 있고 07·08과 함께 진행해도 됩니다.
 
 ---
 
@@ -13,15 +13,18 @@ Azure Kubernetes Service(AKS)의 **Application Routing 애드온**과 **Gateway 
 flowchart LR
   user([사용자]) -->|"HTTP → HTTPS"| pip["정적 공인 IP"] --> gw["Gateway (approuting-istio)<br/>httpbin-gateway"]
   gw --> route[HTTPRoute] --> svc[httpbin Service]
-  gw -.->|"옵션 09 전환 후 대체"| istioGw["Gateway (istio)<br/>istio-session-gateway"]
-  istioGw --> istioRoute["HTTPRoute<br/>istio-session-test"] --> istioSvc[istio-session-test Service]
+  user --> istioLb["추가 Standard LB<br/>(옵션 09)"] --> istioGw["Gateway (istio)<br/>istio-session-gateway"]
+  istioGw --> istioRoute["HTTPRoute<br/>istio-session-test"] --> istioSvc["istio-session-test Service"]
   istioSvc --> sessionPodA["session-test Pod A"]
   istioSvc --> sessionPodB["session-test Pod B"]
   dr["DestinationRule<br/>consistentHash.httpCookie"] -.-> istioSvc
   gw -.->|"내부 LB (옵션 08)"| ilb["Gateway internal LB<br/>Service/httpbin-gateway-approuting-istio"]
-  subgraph aks ["AKS Standard (Korea Central)"]
-    gw; route; svc; ilb; istioGw; istioRoute; istioSvc; sessionPodA; sessionPodB; dr
+  subgraph aks ["기존 AKS — Application Routing"]
+    gw; route; svc; ilb
     edns["managed external-dns<br/>(옵션)"]
+  end
+  subgraph istioAks ["추가 AKS — Istio service mesh (옵션 09)"]
+    istioGw; istioRoute; istioSvc; sessionPodA; sessionPodB; dr
   end
   ilb -.-> pls["Private Link Service"]
   pls -.-> pe["Private Endpoint"]
@@ -48,7 +51,7 @@ flowchart LR
 6. (옵션) 자동 생성되는 Gateway 인프라(Service·Deployment·HPA·PDB)를 ConfigMap으로 재정의하고, Annotation으로 내부 Load Balancer 전환을 수행한다.
 7. (옵션) Azure Front Door에서 TLS offloading을 구성하고, ingress-nginx와 Gateway API 데이터 플레인을 병렬 구성해 가중치 카나리 마이그레이션을 수행한다.
 8. Gateway annotation이 generated Service에 전달되는지와 Private Link Service/Private Endpoint 연결을 검증한다.
-9. AKS Istio service mesh add-on으로 전환한 뒤 쿠키 consistent hash 동작을 확인하고, 8/16/32 KiB 응답 헤더가 어떻게 관찰되는지 기록한다.
+9. (옵션) 같은 리소스 그룹에 Istio 전용 AKS 클러스터를 추가하고, `DestinationRule` 쿠키 consistent hash와 8/16/32 KiB 응답 헤더를 관찰한다.
 10. 실습에 사용한 모든 Azure 리소스를 완전히 정리한다.
 
 ---
@@ -76,10 +79,10 @@ flowchart LR
 | 06 | [Gateway 인프라 커스터마이징 (옵션)](docs/06-gateway-customizations.md) | ConfigMap으로 HPA·Deployment 재정의, Annotation으로 내부 LB 전환 |
 | 07 | [AFD 카나리 마이그레이션 (옵션)](docs/07-afd-canary-migration.md) | AFD TLS offloading, ingress-nginx ∥ Gateway API 병렬 구성, 가중치 카나리로 무중단 이관 |
 | 08 | [Gateway API Private Link Service 검증 (옵션)](docs/08-private-link-service.md) | Gateway annotation 전달과 Private Endpoint/ACI로 private data path 확인 |
-| 09 | [Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](docs/09-istio-cookie-affinity.md) | Istio add-on 전환, `DestinationRule` 쿠키 일관 해시, 8/16/32 KiB 응답 헤더 관찰 |
+| 09 | [Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션)](docs/09-istio-cookie-affinity.md) | 별도 Istio AKS 생성, DestinationRule 쿠키 일관 해시, 8/16/32 KiB 응답 헤더 관찰 |
 | 10 | [정리](docs/10-cleanup.md) | 전체 Azure 리소스 삭제 |
 
-07, 08, 09는 05/06 이후에 선택하는 서로 다른 종착형 옵션 경로이며, 서로 순차적으로 진행하지 않습니다.
+07과 08은 기존 Application Routing Gateway 상태를 변경하는 옵션입니다. 09는 별도 클러스터를 사용하므로 02 이후 독립적으로 수행할 수 있으며, 07·08 전후에도 실행할 수 있습니다.
 
 ---
 
@@ -95,9 +98,9 @@ flowchart LR
 | 06 | Gateway 인프라 커스터마이징 (옵션) | 10–15분 | HPA 반영·내부 LB 재구성 대기 |
 | 07 | AFD 카나리 마이그레이션 (옵션) | 50–90분 | AFD 라우트·가중치 변경 전파 대기 (회당 5–30분) |
 | 08 | Gateway API Private Link Service 검증 (옵션) | 15–20분 (Private Endpoint 승인·ACI 통신 확인 대기 포함; 2026-08-11 리허설 실측: Gateway 패치→ACI HTTP 200 확인까지 순수 Azure 작업 시간 약 6분) | Private Endpoint 승인·ACI 통신 확인 |
-| 09 | Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션) | 15–20분 (2026-08-12 리허설 기준, add-on 전환·Gateway LB 프로비저닝 대기 포함) | Application Routing 비활성화·Istio add-on/Gateway LB 프로비저닝 |
+| 09 | Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션) | 25–35분 (신규 AKS·Istio control plane·Gateway LB 프로비저닝 대기 포함) | 두 번째 AKS 클러스터와 Gateway Load Balancer 프로비저닝 |
 | 10 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
-| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +15–20분, 09 옵션 +15–20분)** | |
+| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +15–20분, 09 옵션 +25–35분)** | |
 
 ---
 
@@ -114,9 +117,10 @@ flowchart LR
 | Azure Front Door Standard (옵션 07) | 기본요금 약 $35/월의 일할 + 요청·전송량 | 실습 1–1.5시간 기준 소액, 07 수행 시에만 생성 |
 | Azure Private Endpoint (옵션 08) | — | private path 검증용, PE 승인 대기 포함 (2026-08-11 리허설 실측: 생성 직후 자동 `Approved`, 모듈 실습 시간(약 10–15분) 동안만 유지) |
 | Azure Container Instances (옵션 08) | 짧은 실행 시간 기준 소액 | consumer VNet의 ACI로 private data path 확인 (2026-08-11 리허설 실측: 컨테이너 실행 시간 약 20–25초, 이미지 pull 포함) |
-| Istio Gateway API용 Azure Standard LB·Gateway Pod·session-test Pod (옵션 09) | 기존 AKS 노드에서 짧게 실행 | 새 Gateway가 Standard Load Balancer 1개와 짧게 실행되는 Gateway Pod·session-test Pod를 기존 AKS 노드에 추가로 생성하며, 별도 AKS 클러스터는 만들지 않음 |
+| AKS Istio 옵션 클러스터 (옵션 09) | Standard_D2s_v5 × 2 | 기존 클러스터와 별도로 생성되어 10 모듈까지 유지됩니다. `Insufficient cpu` 확인 시에만 3노드로 확장합니다 |
+| Istio Gateway용 Azure Standard LB (옵션 09) | — | `Gateway/istio-session-gateway`가 자동 생성하며 10 모듈까지 과금됩니다 |
 
-실습 종료 후 반드시 **10 — 정리** 모듈을 실행해 모든 리소스를 삭제하세요.
+실습 종료 후 반드시 **10 — 정리** 모듈을 실행해 두 AKS 클러스터와 생성된 두 개의 노드 리소스 그룹까지 모두 삭제하세요.
 
 ---
 
@@ -141,7 +145,7 @@ AKS 노드 리소스 그룹(`MC_...`) 내부 리소스는 AKS가 자동 관리�
 - [AKS Application Routing — DNS·TLS 구성](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api-dns-tls) — 04·05 모듈의 원본 문서
 - [AKS Application Routing 애드온 개요](https://learn.microsoft.com/en-us/azure/aks/app-routing)
 - [AKS Managed Gateway API](https://learn.microsoft.com/en-us/azure/aks/managed-gateway-api)
-- [AKS Istio add-on 배포](https://learn.microsoft.com/azure/aks/istio-deploy-addon) — 09 모듈 add-on 전환 절차
+- [AKS Istio add-on 배포](https://learn.microsoft.com/azure/aks/istio-deploy-addon) — 09 모듈 별도 Istio 클러스터 생성 배경
 - [AKS Istio Gateway API](https://learn.microsoft.com/azure/aks/istio-gateway-api) — 06·09 모듈의 Gateway API 커스터마이징/배포 배경
 - [AKS Application Routing Gateway API 제한 사항](https://learn.microsoft.com/azure/aks/app-routing-gateway-api#limitations) — 09 모듈에서 `approuting-istio`와 `istio` 경로를 구분하는 배경
 - [Istio Gateway API — ConfigMap·Annotation customizations](https://learn.microsoft.com/en-us/azure/aks/istio-gateway-api#configmap-customizations) — 06 모듈의 원본 문서
