@@ -1,0 +1,133 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio-session-test
+data:
+  server.py: |
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlparse
+
+    POD_NAME = os.environ["POD_NAME"]
+    ALLOWED_HEADER_KIB = {8, 16, 32}
+
+
+    class Handler(BaseHTTPRequestHandler):
+        def send_json(self, status, payload, large_header_bytes=0):
+            body = json.dumps(payload, separators=(",", ":")).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-Workshop-Pod", POD_NAME)
+            if large_header_bytes:
+                self.send_header("X-Workshop-Large-Header", "x" * large_header_bytes)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            request = urlparse(self.path)
+            if request.path == "/healthz":
+                self.send_json(200, {"status": "ok", "pod": POD_NAME})
+                return
+            if request.path == "/identity":
+                self.send_json(200, {"pod": POD_NAME})
+                return
+            if request.path == "/headers":
+                values = parse_qs(request.query).get("size", [])
+                try:
+                    size_kib = int(values[0])
+                except (IndexError, ValueError):
+                    self.send_json(400, {"error": "size must be 8, 16, or 32"})
+                    return
+                if size_kib not in ALLOWED_HEADER_KIB:
+                    self.send_json(400, {"error": "size must be 8, 16, or 32"})
+                    return
+                self.send_json(
+                    200,
+                    {"pod": POD_NAME, "header_kib": size_kib},
+                    large_header_bytes=size_kib * 1024,
+                )
+                return
+            self.send_json(404, {"error": "not found"})
+
+        def log_message(self, format, *args):
+            print(f"{self.client_address[0]} {format % args}", flush=True)
+
+
+    ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: istio-session-test
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: istio-session-test
+  template:
+    metadata:
+      labels:
+        app: istio-session-test
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: app
+        image: python:3.12-alpine
+        command: ["python", "/app/server.py"]
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        ports:
+        - name: http
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 2
+          periodSeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 20m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: app
+          mountPath: /app
+          readOnly: true
+      volumes:
+      - name: app
+        configMap:
+          name: istio-session-test
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: istio-session-test
+spec:
+  selector:
+    app: istio-session-test
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
