@@ -2,7 +2,7 @@
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
-예상 소요 시간: 25–35분 (add-on 전환과 Gateway Load Balancer 생성 대기 포함)
+예상 소요 시간: 15–20분 (2026-08-12 리허설 기준, add-on 전환과 Gateway Load Balancer 생성 대기 포함)
 
 > **종착형 옵션 모듈**: 05 또는 06 완료 후 선택합니다. 07 AFD·08 PLS와 서로 배타적인 종착 경로이며 순차 수행하지 않습니다. 완료 후 Application Routing Gateway API로 되돌리지 않고 [10 — 정리](10-cleanup.md)로 이동합니다.
 
@@ -98,6 +98,8 @@ kubectl delete gateway httpbin-gateway -n "$APP_NAMESPACE" --ignore-not-found
 kubectl delete configmap gw-options -n "$APP_NAMESPACE" --ignore-not-found
 kubectl wait --for=delete deployment/httpbin-gateway-approuting-istio \
   -n "$APP_NAMESPACE" --timeout=300s
+kubectl wait --for=delete service/httpbin-gateway-approuting-istio \
+  -n "$APP_NAMESPACE" --timeout=300s
 kubectl get deployment,service,hpa,pdb -n "$APP_NAMESPACE" \
   httpbin-gateway-approuting-istio 2>&1 || true
 ```
@@ -107,13 +109,15 @@ kubectl get deployment,service,hpa,pdb -n "$APP_NAMESPACE" \
 httproute.gateway.networking.k8s.io "httpbin" deleted
 gateway.gateway.networking.k8s.io "httpbin-gateway" deleted
 configmap "gw-options" deleted
+deployment.apps/httpbin-gateway-approuting-istio condition met
+service/httpbin-gateway-approuting-istio condition met
 Error from server (NotFound): deployments.apps "httpbin-gateway-approuting-istio" not found
 Error from server (NotFound): services "httpbin-gateway-approuting-istio" not found
 Error from server (NotFound): horizontalpodautoscalers.autoscaling "httpbin-gateway-approuting-istio" not found
 Error from server (NotFound): poddisruptionbudgets.policy "httpbin-gateway-approuting-istio" not found
 ```
 
-핵심은 **HTTPRoute와 Gateway 삭제 후 자동 생성된 Deployment/Service/HPA/PDB가 함께 사라지는지**를 보는 것입니다. 반대로 원래의 `httpbin` 워크로드, DNS zone, Key Vault, 정적 공인 IP는 아직 리소스 그룹에 남아 있을 수 있습니다. 다만 이제 그 자원들은 **활성 ingress 경로**에 연결되어 있지 않습니다.
+핵심은 **HTTPRoute와 Gateway 삭제 후 자동 생성된 Deployment/Service/HPA/PDB가 함께 사라지는지**를 보는 것입니다. 2026-08-12 리허설에서는 Deployment보다 Service가 수십 초 늦게 사라졌으므로, Service 삭제까지 확인한 뒤에만 다음 disable 단계로 넘어갑니다. 반대로 원래의 `httpbin` 워크로드, DNS zone, Key Vault, 정적 공인 IP는 아직 리소스 그룹에 남아 있을 수 있습니다. 다만 이제 그 자원들은 **활성 ingress 경로**에 연결되어 있지 않습니다.
 
 ---
 
@@ -128,16 +132,20 @@ az aks update \
   --name "$CLUSTER" \
   --disable-app-routing-istio \
   -o none
-kubectl wait --for=delete gatewayclass/approuting-istio --timeout=300s
+az aks show -g "$RESOURCE_GROUP" -n "$CLUSTER" \
+  --query 'ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode' -o tsv
 kubectl get gatewayclass
 ```
 
 📋 **예상 출력**
 ```text
-No resources found
+Disabled
+NAME               CONTROLLER                               ACCEPTED   AGE
+approuting-istio   istio.aks.azure.com/gateway-controller   True       18m
+istio-remote       istio.io/unmanaged-gateway               True       18m
 ```
 
-이 단계는 기존 managed GatewayClass를 cleanly 제거하는 절차입니다. `kubectl get gatewayclass`가 비어 있으면 정상입니다. `--disable-app-routing-istio`가 거부된다면, 아직 삭제되지 않은 기존 Gateway 리소스가 남아 있는지 먼저 다시 확인해야 합니다.
+이 단계의 확인 기준은 **GatewayClass 삭제 여부가 아니라**, 2절에서 기존 generated 리소스가 사라졌고 cluster profile의 `appRoutingIstio.mode` 값이 `Disabled`로 바뀌었는지입니다. 2026-08-12 Korea Central 리허설에서는 disable 이후에도 `approuting-istio`와 `istio-remote` GatewayClass 객체가 남아 있었지만, 그 상태에서 바로 다음 절의 `az aks mesh enable`이 정상 완료되었습니다. `--disable-app-routing-istio`가 거부된다면, 아직 삭제되지 않은 기존 Gateway 리소스가 남아 있는지 먼저 다시 확인해야 합니다.
 
 ⏳ **기다리는 동안 읽기**: 다음 절의 `az aks mesh enable`은 Istio control plane과 GatewayClass 기본값을 새로 배치하므로 수 분이 걸릴 수 있습니다. 기다리는 동안 위 비교 표와 아래 쿠키 동작 설명을 먼저 읽어 두세요. 이번 실습에서 `httpCookie.ttl: 0s`는 **브라우저 종료 시 사라지는 세션 쿠키**를 의미하며, “외부 저장소에 영구 매핑을 남기는 sticky session”과는 다릅니다.
 
@@ -154,10 +162,11 @@ az aks mesh enable \
 
 📋 **예상 출력**
 ```text
-Revision   CompatibleWith
----------  ------------------------------------------------------------
-asm-1-26   KubernetesOfficial: 1.31, 1.32, 1.33
-asm-1-27   KubernetesOfficial: 1.32, 1.33
+Revision    Upgrades            CompatibleWith      CompatibleVersions
+----------  ------------------  ------------------  ----------------------------------
+asm-1-28    asm-1-29, asm-1-30  KubernetesOfficial  1.30, 1.31, 1.32, 1.33, 1.34, 1.35
+asm-1-29    asm-1-30            KubernetesOfficial  1.31, 1.32, 1.33, 1.34, 1.35, 1.36
+asm-1-30    None available      KubernetesOfficial  1.32, 1.33, 1.34, 1.35, 1.36
 ```
 
 ### 3.3 설치된 revision과 GatewayClass 기본값 검증
@@ -178,8 +187,7 @@ echo "REQUESTED=$REVISION  INSTALLED=$INSTALLED_REVISION"
   echo "요청한 Istio revision과 설치된 revision이 다릅니다."
   exit 1
 }
-kubectl wait --for=condition=Available deployment \
-  -l app=istiod -n aks-istio-system --timeout=300s
+kubectl get deployment -n aks-istio-system -l app=istiod
 kubectl get pods -n aks-istio-system
 kubectl get gatewayclass istio
 kubectl get crd destinationrules.networking.istio.io
@@ -189,17 +197,20 @@ kubectl get configmap istio-gateway-class-defaults -n aks-istio-system \
 
 📋 **예상 출력**
 ```text
-REQUESTED=asm-1-27  INSTALLED=asm-1-27
+REQUESTED=asm-1-30  INSTALLED=asm-1-30
+NAME              READY   UP-TO-DATE   AVAILABLE   AGE
+istiod-asm-1-30   1/2     2            1           13m
 NAME                               READY   STATUS    RESTARTS   AGE
-istiod-asm-1-27-6d4cb7d9b7-pn8cq   1/1     Running   0          2m
+istiod-asm-1-30-5b7d4749fb-q5bpx   1/1     Running   0          13m
+istiod-asm-1-30-5b7d4749fb-qsgl7   0/1     Pending   0          13m
 NAME    CONTROLLER                  ACCEPTED   AGE
-istio   istio.io/gateway-controller True       2m
-NAME                                          CREATED AT
-destinationrules.networking.istio.io          2026-08-12T04:15:00Z
+istio   istio.io/gateway-controller True       13m
+NAME                                   CREATED AT
+destinationrules.networking.istio.io   2026-08-12T06:10:34Z
 istio
 ```
 
-마지막 줄의 `istio`가 가장 중요한 확인값입니다. 이제 managed Gateway 기본값이 `approuting-istio`가 아니라 **service mesh GatewayClass `istio`** 에 연결됐다는 뜻입니다.
+마지막 줄의 `istio`가 가장 중요한 확인값입니다. 2026-08-12 리허설에서는 2노드 `Standard_D2s_v5` 워크숍 클러스터에서 두 번째 `istiod`가 `Pending(Insufficient cpu)`로 남았지만, 요청한 revision 설치·`GatewayClass/istio` 수락·4절의 실제 Gateway `Programmed=True`까지는 정상적으로 확인됐습니다. 따라서 이 문서에서는 deployment 전체 `Available=True` 대신, **요청 revision 설치 + 최소 1개의 `istiod-$REVISION` 파드 `1/1 Running` + `GatewayClass/istio` 수락**을 진행 기준으로 삼습니다.
 
 ---
 
@@ -397,12 +408,12 @@ rm -rf "$COOKIE_DIR"
 
 📋 **예상 출력**
 ```text
-8 KiB: status=200 header_bytes=8192 pod=istio-session-test-...
-16 KiB: status=200 header_bytes=16384 pod=istio-session-test-...
-32 KiB: status=200 header_bytes=32768 pod=istio-session-test-...
+8 KiB: status=200 header_bytes=8192 pod=istio-session-test-8649fc85c6-dg828
+16 KiB: status=200 header_bytes=16384 pod=istio-session-test-8649fc85c6-dg828
+32 KiB: status=200 header_bytes=32768 pod=istio-session-test-8649fc85c6-dg828
 ```
 
-위 패턴은 **리허설에서 다시 확정할 대표 예시**입니다. 실제 실습에서 16 KiB 또는 32 KiB가 다른 상태 코드로 보이면, 이번 문서의 목적은 값을 억지로 성공시키는 것이 아니라 **관측된 상태 코드와 바이트 길이를 그대로 기록하는 것**입니다. Envoy 설정을 바꿔 결과를 맞추지 말고, 현재 AKS/Istio 버전에서 어떤 값이 관찰됐는지 남기세요.
+위 세 줄은 **2026-08-12 Korea Central 리허설에서 관찰한 실제 요약값**입니다. 실제 실습에서 16 KiB 또는 32 KiB가 다른 상태 코드로 보이면, 이번 문서의 목적은 값을 억지로 성공시키는 것이 아니라 **관측된 상태 코드와 바이트 길이를 그대로 기록하는 것**입니다. Envoy 설정을 바꿔 결과를 맞추지 말고, 현재 AKS/Istio 버전에서 어떤 값이 관찰됐는지 남기세요.
 
 ---
 
@@ -426,7 +437,8 @@ rm -rf "$COOKIE_DIR"
 | 증상 | 원인 | 진단 | 조치 |
 |------|------|------|------|
 | `az aks update --disable-app-routing-istio`가 기존 Gateway가 남아 있다고 거부됨 | `httpbin-gateway` 또는 `HTTPRoute/httpbin`이 아직 삭제되지 않음 | `kubectl get gateway,httproute -n $APP_NAMESPACE`로 남아 있는 객체를 확인합니다 | 2절 명령을 다시 실행해 기존 Gateway와 HTTPRoute를 먼저 제거한 뒤 add-on disable을 재시도합니다 |
-| `az aks mesh enable`이 conflict 또는 이미 다른 add-on이 활성화됐다고 실패함 | Application Routing Istio disable이 아직 끝나지 않았거나 `approuting-istio` GatewayClass가 남아 있음 | `kubectl get gatewayclass`와 `az aks show -g $RESOURCE_GROUP -n $CLUSTER --query serviceMeshProfile -o json`로 현재 상태를 확인합니다 | `kubectl wait --for=delete gatewayclass/approuting-istio --timeout=300s`가 끝난 뒤 별도 명령으로 다시 `az aks mesh enable`을 실행합니다 |
+| `az aks mesh enable`이 conflict 또는 이미 다른 add-on이 활성화됐다고 실패함 | Application Routing Istio disable이 아직 cluster profile에 반영되지 않았거나 기존 generated Service 삭제가 끝나지 않음 | `az aks show -g $RESOURCE_GROUP -n $CLUSTER --query 'ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode' -o tsv`와 `kubectl get svc httpbin-gateway-approuting-istio -n $APP_NAMESPACE`로 현재 상태를 확인합니다 | `appRoutingIstio.mode`가 `Disabled`이고 generated Service가 사라질 때까지 기다린 뒤 별도 명령으로 다시 `az aks mesh enable`을 실행합니다 |
+| `istiod` Deployment가 `1/2 Available`이거나 `kubectl get pods -n aks-istio-system`에 `Pending`이 남음 | 2노드 `Standard_D2s_v5` 워크숍 클러스터의 남는 CPU가 부족해 두 번째 control plane replica가 스케줄되지 않음 | `kubectl get deployment -n aks-istio-system -l app=istiod`, `kubectl get pods -n aks-istio-system`, `kubectl get events -n aks-istio-system --sort-by=.lastTimestamp \| tail -20`로 `Insufficient cpu`를 확인합니다 | 요청한 revision이 설치되었고 최소 1개의 `istiod-$REVISION` 파드가 `1/1 Running`, `GatewayClass/istio`가 `Accepted=True`이면 4절로 진행합니다. 이후 `Gateway/istio-session-gateway`가 `Programmed=False`로 머무르면 노드를 늘리거나 다른 워크로드를 줄입니다 |
 | 설치된 revision이 `asm-1-26`보다 낮거나 비어 있음 | 지역/버전 호환 revision 조회 결과가 요구 조건을 만족하지 않음 | `echo $REVISION`과 `az aks mesh get-revisions --location $LOCATION -o table`로 후보를 다시 봅니다 | fail-fast 체크를 유지한 채 진행을 중단하고, 지원되는 AKS minor 버전 또는 지역 조합으로 다시 준비합니다 |
 | 테스트 파드가 `1/1`이 아니라 `2/2`로 올라옴 | 네임스페이스에 기존 injection 라벨이 남아 sidecar가 주입됨 | `kubectl get ns $APP_NAMESPACE --show-labels`와 `kubectl get pods -n $APP_NAMESPACE -l app=istio-session-test`로 상태를 확인합니다 | `kubectl label namespace "$APP_NAMESPACE" istio.io/rev-` 및 `kubectl label namespace "$APP_NAMESPACE" istio-injection-`로 라벨을 제거한 뒤 Deployment를 재시작합니다 |
 | `Gateway/istio-session-gateway`가 `Programmed=False`이거나 생성된 Gateway 파드가 `Pending` | 노드 CPU 여유가 부족해 새 Gateway 프록시를 스케줄하지 못함 | `kubectl get deployment,service -n $APP_NAMESPACE istio-session-gateway-istio`, `kubectl get pods -n $APP_NAMESPACE`, `kubectl describe pod <gateway-pod>`로 `Insufficient cpu` 이벤트를 확인합니다 | 노드 수를 늘리거나 다른 워크로드를 줄인 뒤 Gateway가 `Programmed=True`가 될 때까지 다시 확인합니다 |

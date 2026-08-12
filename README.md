@@ -95,9 +95,9 @@ flowchart LR
 | 06 | Gateway 인프라 커스터마이징 (옵션) | 10–15분 | HPA 반영·내부 LB 재구성 대기 |
 | 07 | AFD 카나리 마이그레이션 (옵션) | 50–90분 | AFD 라우트·가중치 변경 전파 대기 (회당 5–30분) |
 | 08 | Gateway API Private Link Service 검증 (옵션) | 15–20분 (Private Endpoint 승인·ACI 통신 확인 대기 포함; 2026-08-11 리허설 실측: Gateway 패치→ACI HTTP 200 확인까지 순수 Azure 작업 시간 약 6분) | Private Endpoint 승인·ACI 통신 확인 |
-| 09 | Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션) | 25–35분 (add-on 전환·Gateway LB 프로비저닝 대기 포함) | Application Routing 비활성화·Istio add-on/Gateway LB 프로비저닝 |
+| 09 | Istio Gateway API 쿠키 일관 해시·응답 헤더 검증 (옵션) | 15–20분 (2026-08-12 리허설 기준, add-on 전환·Gateway LB 프로비저닝 대기 포함) | Application Routing 비활성화·Istio add-on/Gateway LB 프로비저닝 |
 | 10 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
-| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +15–20분, 09 옵션 +25–35분)** | |
+| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +15–20분, 09 옵션 +15–20분)** | |
 
 ---
 
