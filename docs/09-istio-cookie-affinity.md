@@ -38,6 +38,14 @@ flowchart LR
 
 🟢 **실행**
 ```bash
+cd ~
+if [ -d ms-aks-approuting-workshop01/.git ]; then
+  cd ms-aks-approuting-workshop01
+  git pull --ff-only
+else
+  git clone https://github.com/jungwoonlee_microsoft/ms-aks-approuting-workshop01.git
+  cd ms-aks-approuting-workshop01
+fi
 source ~/.approuting-ws-env
 az aks get-credentials --resource-group "$RESOURCE_GROUP" --name "$CLUSTER" --overwrite-existing || true
 echo "RESOURCE_GROUP=$RESOURCE_GROUP  CLUSTER=$CLUSTER  LOCATION=$LOCATION"
