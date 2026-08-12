@@ -46,7 +46,7 @@ flowchart LR
 | 앱 파드 sidecar | 자동 주입 경로 없음 | 네임스페이스 라벨로 선택적 주입 가능 | 이번 모듈은 **앱 파드에 sidecar를 넣지 않습니다** |
 | Gateway 리소스명 | 워크숍 기존 Gateway 이름 유지 | `istio-session-gateway` | 원래 Gateway와 별도 이름으로 공존합니다 |
 
-즉, 이번 실습의 핵심은 “원래 클러스터를 변환”하는 것이 아니라, **원래 클러스터는 그대로 두고 별도 Istio 클러스터에서 같은 종류의 세션 실험을 독립적으로 수행해 비교 포인트를 확보하는 것**입니다. `istio-session-test`는 원래 클러스터의 기존 워크로드를 데이터 소스로 사용하지 않습니다.
+두 클러스터를 유지한 채, 별도 Istio 클러스터에서 세션 정책과 응답 동작을 독립적으로 관찰합니다.
 
 ---
 
@@ -89,7 +89,7 @@ kubectl get gateway -A
 
 </details>
 
-`kubectl get gateway -A`는 02 직후라면 아무 Gateway도 보여 주지 않을 수 있습니다. 그것도 정상입니다. 이 모듈의 불변 조건은 **원래 클러스터의 Application Routing profile이 `Enabled`이고 `GatewayClass/approuting-istio`가 수락되어 있으며, 모듈 09가 그 상태를 바꾸지 않는 것**입니다.
+02 직후에는 `kubectl get gateway -A` 결과가 비어 있을 수 있습니다. `Application Routing Istio=Enabled`와 `GatewayClass/approuting-istio Accepted=True`가 확인되면 다음 단계로 진행합니다.
 
 📋 **예상 출력**
 ```text
@@ -256,6 +256,9 @@ istio   istio.io/gateway-controller True       13m
 
 앱 매니페스트는 **별도 이미지 빌드 없이** Pod identity와 큰 응답 헤더·본문을 반환하는 테스트 서버를 ConfigMap으로 제공하고, 파드를 2개 띄워 쿠키 기반 선택과 재매핑을 관찰할 수 있게 합니다.
 
+<details>
+<summary>👁️ 테스트 애플리케이션 전체 YAML 보기</summary>
+
 👁️ **예시** — `manifests/istio-session-test-app.yaml` 전체
 ```yaml
 apiVersion: v1
@@ -412,6 +415,8 @@ spec:
     port: 80
     targetPort: http
 ```
+
+</details>
 
 | 필드 | 역할 |
 |------|------|
@@ -678,7 +683,7 @@ NGINX에서 사용하던 세 설정의 역할은 서로 다릅니다.
 - `nginx.ingress.kubernetes.io/proxy-buffers`: 업스트림 응답 본문을 저장하는 버퍼 수와 크기를 제어합니다. 아래 **본문 테스트**는 이 영역을 관찰하는 출발점입니다.
 - `nginx.ingress.kubernetes.io/proxy-busy-buffers-size`: 클라이언트로 전송 중인 응답 버퍼의 최대 크기를 제어합니다. 역시 **본문 전달 과정**과 관련이 있습니다.
 
-다만 **8/16/32 KiB 본문이 성공한다는 사실만으로** `proxy-buffers`·`proxy-busy-buffers-size`의 streaming/busy-buffer semantics 전체가 증명되지는 않습니다. 이 문서의 본문 테스트는 “현재 AKS/Istio 조합에서 이 크기의 응답 본문이 어떤 status와 byte 수로 보이는가”를 관찰하는 수준이며, 별도의 스트리밍·장시간 전송 시험을 대체하지 않습니다.
+이번 테스트는 고정 크기 응답의 상태 코드와 바이트 수를 확인합니다. `proxy-buffer-size`는 헤더 결과와, `proxy-buffers`·`proxy-busy-buffers-size`는 본문 결과와 비교할 수 있으며, streaming/busy-buffer 동작은 별도 부하·스트리밍 시험으로 확인합니다.
 
 ### 7.1 큰 응답 헤더 관찰
 
@@ -719,7 +724,7 @@ done
 32 KiB: status=200 header_bytes=32768 pod=istio-session-test-<pod-name>
 ```
 
-위 세 줄은 **2026-08-12 Korea Central focused live 검증에서 `/body` 추가 후 다시 확인한 실제 요약값**입니다. 이 블록은 sticky cookie를 재사용하지 않으므로 요청마다 선택된 Pod가 달라질 수 있습니다. 실제 실습에서 16 KiB 또는 32 KiB가 다른 상태 코드로 보이면, 이번 문서의 목적은 값을 억지로 성공시키는 것이 아니라 **관측된 상태 코드와 바이트 길이를 그대로 기록하는 것**입니다. Envoy 설정을 바꿔 결과를 맞추지 말고, 현재 AKS/Istio 버전에서 어떤 값이 관찰됐는지 남기세요.
+2026-08-12 Korea Central focused live 검증에서 세 크기 모두 HTTP `200`과 정확한 헤더 바이트 수를 확인했습니다. sticky cookie를 재사용하지 않으므로 요청마다 선택된 Pod는 달라질 수 있습니다.
 
 ### 7.2 큰 응답 본문 관찰
 
@@ -766,15 +771,15 @@ rm -rf "$COOKIE_DIR"
 |------|-------------|
 | `DestinationRule`이 NGINX cookie affinity를 그대로 대체할 수 있는가? | 쿠키 키 기반의 일관 라우팅은 가능하지만, 완전히 동일한 영속 sticky semantics는 아닙니다 |
 | `proxy-buffer-size` 없이 큰 응답 헤더를 처리할 수 있는가? | 리허설한 AKS/Istio 버전에서는 별도 NGINX annotation 없이 8/16/32 KiB 응답 헤더가 모두 200으로 관찰됐습니다 |
-| `proxy-buffers`와 `proxy-busy-buffers-size`는 어떻게 다뤄야 하는가? | `/body?size=8\|16\|32`로 기본 body buffering 관찰은 가능하지만, 그 성공만으로 streaming/busy-buffer semantics 전체가 증명되지는 않습니다 |
+| `proxy-buffers`와 `proxy-busy-buffers-size`는 어떻게 관찰하는가? | `/body?size=8\|16\|32`로 고정 크기 본문 전달을 확인하고, streaming 동작은 별도 시험으로 확장합니다 |
 | 엔드포인트가 바뀌면 어떤 일이 일어나는가? | 같은 쿠키라도 hash ring 멤버십 변화 때문에 다른 파드로 재매핑될 수 있습니다 |
-| 원래 Application Routing 클러스터가 이번 테스트의 트래픽 경로인가? | 아닙니다. 이번 테스트의 Gateway·HTTPRoute·DestinationRule·Pod 관찰값은 모두 `$ISTIO_CLUSTER`에서만 발생합니다 |
+| 이번 테스트의 트래픽 경로는 어디인가? | Gateway·HTTPRoute·DestinationRule·Pod 관찰값은 `$ISTIO_CLUSTER`에서 발생합니다 |
 
 ---
 
 ## 9. 필요할 때만 용량 회복
 
-이 절은 `aks-istio-system`의 `istiod` 또는 생성된 Gateway Pod가 `Pending`일 때만 사용합니다. 2026-08-12 Korea Central 리허설에서는 `Unschedulable`·`Insufficient cpu` 이벤트가 나오지 않아 기본 2노드로 충분했습니다.
+이 절은 `istiod` 또는 Gateway Pod가 `Pending`일 때 사용합니다. 2026-08-12 Korea Central 리허설에서는 기본 2노드로 완료했습니다.
 
 🟢 **실행**
 ```bash
@@ -782,7 +787,7 @@ kubectl get pods -A --field-selector=status.phase=Pending
 kubectl get events -A --sort-by=.lastTimestamp | tail -30
 ```
 
-이벤트 출력에 **`Unschedulable`와 `Insufficient cpu`가 둘 다 보일 때만** 아래 스케일 명령을 사용합니다. revision 문제, 이미지 pull 실패, quota, Load Balancer 오류에는 이 명령을 대응책으로 쓰지 않습니다.
+이벤트에서 `Unschedulable`와 `Insufficient cpu`가 함께 확인되면 3노드로 확장합니다. 다른 오류는 아래 트러블슈팅 표의 해당 진단을 따릅니다.
 
 🟢 **실행**
 ```bash
