@@ -72,40 +72,22 @@ az aks get-credentials \
   --name "$CLUSTER" \
   --overwrite-existing
 export ORIGINAL_CONTEXT=$(kubectl config current-context)
-# 별도 Istio 클러스터 이름과 원래 클러스터의 기준 상태를 기록합니다.
+# 별도 Istio 클러스터 이름을 설정합니다.
 export ISTIO_CLUSTER="aks-istio-$SUFFIX"
-export ORIGINAL_APP_ROUTING_MODE=$(az aks show \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "$CLUSTER" \
-  --query 'ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode' \
-  -o tsv)
 echo "RESOURCE_GROUP=$RESOURCE_GROUP  LOCATION=$LOCATION"
 echo "ORIGINAL_CLUSTER=$CLUSTER  ORIGINAL_CONTEXT=$ORIGINAL_CONTEXT"
 echo "ISTIO_CLUSTER=$ISTIO_CLUSTER  APP_NAMESPACE=$APP_NAMESPACE"
-echo "ORIGINAL_APP_ROUTING_MODE=$ORIGINAL_APP_ROUTING_MODE"
-# 원래 클러스터의 Application Routing 설정이 실습 전제와 같은지 확인합니다.
-[ "$ORIGINAL_APP_ROUTING_MODE" = "Enabled" ] || {
-  echo "기존 클러스터의 Application Routing Istio가 Enabled 상태가 아닙니다."
-  exit 1
-}
-# 원래 클러스터의 GatewayClass와 Gateway 목록을 기준값으로 확인합니다.
-kubectl get gatewayclass approuting-istio
-kubectl get gateway -A
 ```
 
 </details>
 
-02 직후에는 `kubectl get gateway -A` 결과가 비어 있을 수 있습니다. `Application Routing Istio=Enabled`와 `GatewayClass/approuting-istio Accepted=True`가 확인되면 다음 단계로 진행합니다.
+`ORIGINAL_CONTEXT`는 모듈 마지막에 기본 실습 클러스터로 돌아올 때 사용합니다.
 
 📋 **예상 출력**
 ```text
 RESOURCE_GROUP=rg-approuting-ws-35448  LOCATION=koreacentral
 ORIGINAL_CLUSTER=aks-approuting-ws-35448  ORIGINAL_CONTEXT=aks-approuting-ws-35448
 ISTIO_CLUSTER=aks-istio-35448  APP_NAMESPACE=workshop
-ORIGINAL_APP_ROUTING_MODE=Enabled
-NAME              CONTROLLER                               ACCEPTED   AGE
-approuting-istio  istio.aks.azure.com/gateway-controller   True       1h
-No resources found
 ```
 
 ---
@@ -842,80 +824,28 @@ rm -rf "$COOKIE_DIR"
 | `proxy-buffer-size` 없이 큰 응답 헤더를 처리할 수 있는가? | 별도 NGINX annotation 없이 8/16/32 KiB 응답 헤더가 모두 HTTP `200`을 반환했고, 헤더 값도 각각 `8192/16384/32768` bytes로 확인됐습니다 |
 | `proxy-buffers`와 `proxy-busy-buffers-size`는 어떻게 관찰하는가? | 8/16/32 KiB 응답 본문이 모두 HTTP `200`을 반환했고, 본문 길이도 각각 `8192/16384/32768` bytes로 확인됐습니다. streaming 동작은 별도 시험 범위입니다 |
 | 엔드포인트가 바뀌면 어떤 일이 일어나는가? | sticky 대상 Pod를 삭제한 뒤 같은 쿠키가 새 Pod로 재매핑되어, endpoint 집합 변경이 기존 세션의 대상 선택에 반영됨을 확인했습니다 |
-| 이번 테스트의 트래픽 경로는 어디인가? | Gateway·HTTPRoute·DestinationRule·Pod 테스트는 `$ISTIO_CLUSTER`에서 수행됐고, 원래 클러스터는 전후 모두 Application Routing mode가 `Enabled`였으며 `kubectl get gateway -A` 결과도 전후 모두 `No resources found`였습니다 |
+| 이번 테스트의 트래픽 경로는 어디인가? | Gateway·HTTPRoute·DestinationRule·Pod 테스트는 `$ISTIO_CLUSTER`에서 수행됐습니다. 원래 `$CLUSTER`를 대상으로 하는 create·update·apply 명령은 실행하지 않았습니다 |
 
 ---
 
-## 9. 필요할 때만 용량 회복
+## 9. 원래 클러스터 context 복귀
 
-이 절은 `istiod` 또는 Gateway Pod가 `Pending`일 때 사용합니다. 2026-08-12 Korea Central 리허설에서는 기본 2노드로 완료했습니다.
-
-🟢 **실행**
-```bash
-# Pending Pod와 최신 스케줄링 이벤트를 함께 확인합니다.
-kubectl get pods -A --field-selector=status.phase=Pending
-kubectl get events -A --sort-by=.lastTimestamp | tail -30
-```
-
-이벤트에서 `Unschedulable`와 `Insufficient cpu`가 함께 확인되면 3노드로 확장합니다. 다른 오류는 아래 트러블슈팅 표의 해당 진단을 따릅니다.
-
-🟢 **실행**
-```bash
-# CPU 부족이 확인된 경우에만 별도 Istio 클러스터를 3노드로 확장합니다.
-az aks scale \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "$ISTIO_CLUSTER" \
-  --node-count 3
-# 확장 후 Gateway가 다시 Programmed 상태인지 확인합니다.
-kubectl wait \
-  --for=condition=Programmed=True \
-  gateway/istio-session-gateway \
-  -n "$APP_NAMESPACE" \
-  --timeout=300s
-```
-
----
-
-## 10. 원래 클러스터 context 복귀와 불변성 검증
-
-이 모듈의 마지막 단계는 **원래 클러스터가 실제로 바뀌지 않았는지** 다시 확인하는 것입니다. 모듈 09에서 만든 리소스는 `$ISTIO_CLUSTER`에 남아 있으며, [10 — 정리](10-cleanup.md)에서 함께 삭제합니다.
+모듈 09의 테스트 리소스는 `$ISTIO_CLUSTER`에 남아 있으며, [10 — 정리](10-cleanup.md)에서 함께 삭제합니다. 기본 모듈 03–08을 이어서 진행하려면 kubectl context만 원래 클러스터로 되돌립니다.
 
 🟢 **실행**
 ```bash
 # kubectl을 실습 시작 시 저장한 원래 클러스터 context로 되돌립니다.
 kubectl config use-context "$ORIGINAL_CONTEXT"
-# 원래 클러스터의 Application Routing mode를 다시 읽어 기준값과 비교합니다.
-export FINAL_APP_ROUTING_MODE=$(az aks show \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "$CLUSTER" \
-  --query 'ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode' \
-  -o tsv)
-echo "BEFORE=$ORIGINAL_APP_ROUTING_MODE  AFTER=$FINAL_APP_ROUTING_MODE"
-[ "$FINAL_APP_ROUTING_MODE" = "$ORIGINAL_APP_ROUTING_MODE" ] || {
-  echo "기존 클러스터의 Application Routing 상태가 달라졌습니다."
-  exit 1
-}
-# GatewayClass, Gateway 목록, current-context를 최종 기준 상태와 비교합니다.
-kubectl get gatewayclass approuting-istio
-kubectl get gateway -A
 kubectl config current-context
 ```
 
 📋 **예상 출력**
 ```text
 Switched to context "aks-approuting-ws-35448".
-BEFORE=Enabled  AFTER=Enabled
-NAME              CONTROLLER                               ACCEPTED   AGE
-approuting-istio  istio.aks.azure.com/gateway-controller   True       2h
-No resources found
 aks-approuting-ws-35448
 ```
 
-03을 이미 수행했다면 `No resources found` 대신 기존 Gateway 목록이 보일 수 있습니다. 그 경우에도 **모듈 09 전후로 같은 Gateway 상태가 유지되는지**를 비교하면 됩니다.
-
-원래 kubectl context로 돌아왔으면 03–08 실습을 계속 진행할 수 있고, 이번 모듈에서 만든 별도 Istio 클러스터 리소스는 10 모듈에서 정리하면 됩니다.
-
----
+원래 kubectl context로 돌아왔으면 03–08 실습을 계속 진행하거나 [10 — 정리](10-cleanup.md)로 이동합니다.
 
 ## 트러블슈팅
 
@@ -924,11 +854,11 @@ aks-approuting-ws-35448
 | `ISTIO_K8S_VERSION` 또는 `REVISION` 값이 비어 있음 | 지역 기본 버전 또는 호환 revision 조회가 실패함 | `az aks get-versions --location "$LOCATION" -o table`와 `az aks mesh get-revisions --location "$LOCATION" -o table`로 값을 다시 조회합니다 | 클러스터 생성 전에 중단하고, 지원되는 버전·revision 조합을 다시 선택합니다 |
 | 기존 `$ISTIO_CLUSTER`가 `Istio` mode가 아니거나 revision이 `asm-1-26` 미만임 | 같은 이름의 비호환 클러스터가 이미 존재함 | `az aks show --resource-group "$RESOURCE_GROUP" --name "$ISTIO_CLUSTER" --query '{mode:serviceMeshProfile.mode, revision:serviceMeshProfile.istio.revisions[0], kubernetesVersion:kubernetesVersion}' -o yaml`로 상태를 확인합니다 | 새 `SUFFIX`를 사용해 다른 이름으로 만들거나, 기존 비호환 워크숍 클러스터를 제거한 뒤 다시 진행합니다 |
 | `az aks create`가 quota 또는 SKU capacity 오류로 실패함 | `StandardDSv5Family` 쿼터 부족 또는 지역 용량 부족 | Azure 오류 메시지와 구독 quota 상태를 확인합니다 | quota 증가 요청 또는 승인된 용량으로 재시도하고, 원래 `$CLUSTER`는 수정하지 않습니다 |
-| 요청한 revision의 `istiod`가 Running이 아님 | control plane 초기화 지연 또는 스케줄링 실패 | `kubectl get pods -n aks-istio-system`, `kubectl get events -n aks-istio-system --sort-by=.lastTimestamp \| tail -20`으로 원인을 봅니다 | 잠시 기다리고, `Unschedulable` + `Insufficient cpu`가 확인된 경우에만 9절의 scale 명령을 사용합니다 |
-| 생성된 Gateway Pod가 `Pending`이거나 `Gateway/istio-session-gateway`가 `Programmed=False`로 머묾 | Gateway 프록시가 스케줄되지 못함 | `kubectl get deployment,service -n "$APP_NAMESPACE" istio-session-gateway-istio`, `kubectl get pods -n "$APP_NAMESPACE"`, `kubectl get events -n "$APP_NAMESPACE" --sort-by=.lastTimestamp \| tail -20`로 상태를 확인합니다 | `Unschedulable` + `Insufficient cpu`가 확인될 때만 9절의 scale 명령으로 3노드까지 늘립니다 |
+| 요청한 revision의 `istiod`가 Running이 아님 | control plane 초기화 지연 또는 스케줄링 실패 | `kubectl get pods -n aks-istio-system`, `kubectl get events -n aks-istio-system --sort-by=.lastTimestamp \| tail -20`으로 원인을 봅니다 | 잠시 기다립니다. `Unschedulable`과 `Insufficient cpu`가 함께 확인되면 `az aks scale --resource-group "$RESOURCE_GROUP" --name "$ISTIO_CLUSTER" --node-count 3`으로 확장합니다 |
+| 생성된 Gateway Pod가 `Pending`이거나 `Gateway/istio-session-gateway`가 `Programmed=False`로 머묾 | Gateway 프록시가 스케줄되지 못함 | `kubectl get deployment,service -n "$APP_NAMESPACE" istio-session-gateway-istio`, `kubectl get pods -n "$APP_NAMESPACE"`, `kubectl get events -n "$APP_NAMESPACE" --sort-by=.lastTimestamp \| tail-20`로 상태를 확인합니다 | `Unschedulable`과 `Insufficient cpu`가 함께 확인되면 `az aks scale --resource-group "$RESOURCE_GROUP" --name "$ISTIO_CLUSTER" --node-count 3`으로 확장한 뒤 `kubectl wait --for=condition=Programmed=True gateway/istio-session-gateway -n "$APP_NAMESPACE" --timeout=300s`로 다시 확인합니다 |
 | 테스트 파드가 `1/1`이 아니라 `2/2`로 표시됨 | namespace에 injection label이 남아 sidecar가 주입됨 | `kubectl get namespace "$APP_NAMESPACE" --show-labels`와 `kubectl get pods -n "$APP_NAMESPACE" -l app=istio-session-test`로 상태를 확인합니다 | `kubectl label namespace "$APP_NAMESPACE" istio.io/rev-`와 `kubectl label namespace "$APP_NAMESPACE" istio-injection-`로 라벨을 제거한 뒤 Deployment를 다시 시작합니다 |
 | 쿠키가 발급되지 않거나, 20개 샘플에서 엔드포인트가 하나만 보이거나, 재매핑이 시간 안에 끝나지 않거나, 큰 헤더에서 non-200이 보임 | `DestinationRule` 적용 지연, ready endpoint 부족, 빈 응답/JSON 파싱 실패, 현재 버전의 헤더 한계 등 관찰값이 섞여 있음 | `grep -i '^set-cookie: workshop-session=' "$RESPONSE_HEADERS"`, `kubectl get endpointslice -n "$APP_NAMESPACE" -l kubernetes.io/service-name=istio-session-test`, 그리고 6–7절의 hardened curl/jq 명령으로 비어 있지 않은 파드 이름과 상태 코드를 다시 확인합니다 | 빈 출력에 성공 판정을 내리지 말고, 기존 hardened 명령을 유지한 채 쿠키·엔드포인트·재매핑·헤더 바이트 수를 다시 기록합니다 |
-| 마지막 context 또는 profile 값이 시작 상태와 다름 | `ORIGINAL_CONTEXT`로 돌아오지 않았거나 원래 클러스터 profile이 외부에서 변경됨 | `kubectl config current-context`와 `echo "BEFORE=$ORIGINAL_APP_ROUTING_MODE  AFTER=$FINAL_APP_ROUTING_MODE"`를 비교합니다 | 먼저 `kubectl config use-context "$ORIGINAL_CONTEXT"`로 복귀하고, 값이 계속 다르면 원래 클러스터 profile drift를 별도로 진단합니다 |
+| 마지막 current-context가 원래 클러스터와 다름 | 모듈 09의 Istio context에서 아직 돌아오지 않음 | `kubectl config current-context`로 현재 값을 확인합니다 | `kubectl config use-context "$ORIGINAL_CONTEXT"`로 원래 클러스터에 복귀합니다 |
 
 ---
 
