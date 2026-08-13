@@ -60,7 +60,7 @@ if [ -d ms-aks-approuting-workshop01/.git ]; then
   cd ms-aks-approuting-workshop01
   git pull --ff-only
 else
-  git clone https://github.com/jungwoonlee_microsoft/ms-aks-approuting-workshop01.git
+  git clone https://github.com/freeman9844/ms-aks-approuting-workshop01.git
   cd ms-aks-approuting-workshop01
 fi
 # 이전 모듈에서 저장한 공통 환경 변수를 복원합니다.

@@ -30,7 +30,7 @@ az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER --overwr
 
 🟢 **실행**
 ```bash
-cd ~ && git clone https://github.com/jungwoonlee_microsoft/ms-aks-approuting-workshop01.git 2>/dev/null || (cd ms-aks-approuting-workshop01 && git pull)
+cd ~ && git clone https://github.com/freeman9844/ms-aks-approuting-workshop01.git 2>/dev/null || (cd ms-aks-approuting-workshop01 && git pull)
 cd ~/ms-aks-approuting-workshop01
 ```
 
