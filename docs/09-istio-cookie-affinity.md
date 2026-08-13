@@ -2,7 +2,7 @@
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
-예상 소요 시간: 10–15분 (두 번째 AKS 클러스터 생성과 EnvoyFilter 전파 대기 포함)
+예상 소요 시간: 10–15분 (두 번째 AKS 클러스터 생성과 EnvoyFilter 전파 대기 포함; 2026-08-13 Korea Central 리허설 실측: 전체 약 13분(774초), 두 번째 클러스터 생성 282초, EnvoyFilter 전파 3초)
 
 > **독립 옵션 모듈**: [02 — 환경 준비](02-environment-setup.md) 이후 언제든 수행할 수 있습니다. 원래 `$CLUSTER`와 03–08에서 이미 만들어 둔 Gateway 경로가 있다면 그대로 두고, 같은 리소스 그룹에 Istio 전용 AKS 클러스터를 하나 더 만듭니다. 완료 후 원래 kubectl context로 복귀하므로 03–08을 계속 진행하거나 [10 — 정리](10-cleanup.md)로 이동할 수 있습니다.
 
@@ -179,6 +179,8 @@ EFFECTIVE_K8S_VERSION=1.35  EFFECTIVE_REVISION=asm-1-30
 
 이미 같은 이름의 클러스터가 있더라도, 마지막 fail-fast 검사가 **Istio mode 여부와 `asm-1-26` 이상 revision 여부**를 강제로 확인합니다. 즉, 이름만 같고 호환되지 않는 클러스터는 여기서 바로 중단됩니다.
 
+2026-08-13 Korea Central 리허설에서는 신규 `SUFFIX`를 사용해 재사용 경로가 아닌 **신규 생성 경로**를 실제로 거쳤고, `$ISTIO_CLUSTER` 생성에 282초(약 4분 42초)가 걸렸습니다.
+
 ---
 
 ## 2. 두 번째 클러스터 자격 증명, control plane, 네임스페이스 준비
@@ -253,7 +255,7 @@ NAME    CONTROLLER                  ACCEPTED   AGE
 istio   istio.io/gateway-controller True       13m
 ```
 
-2026-08-12 Korea Central 리허설에서는 `istiod-$REVISION` 2개가 모두 `Running`이었고 `Pending`은 0개였습니다. 따라서 이 모듈은 기본 2노드 구성만으로 끝까지 진행됐고, 트러블슈팅의 scale 명령은 사용하지 않았습니다.
+2026-08-13 Korea Central 리허설에서는 `istiod-$REVISION` 2개가 모두 `Running`이었고 `Pending`은 0개였습니다. 따라서 이 모듈은 기본 2노드 구성만으로 끝까지 진행됐고, 트러블슈팅의 scale 명령은 사용하지 않았습니다.
 
 ---
 
@@ -668,6 +670,8 @@ istio-session-test-8649fc85c6-92pbm
 
 여기서 `ttl: 0s`는 만료 시각을 고정하지 않는 **세션 쿠키**라는 뜻입니다. 같은 cookie jar를 계속 쓰는 동안에는 같은 파드가 반복 선택되지만, 브라우저를 닫거나 jar를 버리면 새로운 세션으로 다시 분산될 수 있습니다.
 
+2026-08-13 Korea Central 리허설에서도 첫 요청이 `Set-Cookie: workshop-session=...`를 발급했고, 같은 cookie jar로 이어진 5회 요청 모두 동일 Pod를 가리켰습니다.
+
 ---
 
 ## 6. 독립 세션 분산과 장애 후 재매핑 확인
@@ -694,6 +698,8 @@ done | sort | uniq -c
 ```
 
 분산은 확률적입니다. 운이 나쁘면 20개 표본에서도 한 파드만 보일 수 있으므로, 그런 경우에는 먼저 **준비된 엔드포인트가 실제로 2개인지** 확인하고 새 jar 20개로 한 번 더 반복합니다.
+
+2026-08-13 Korea Central 리허설의 20개 독립 세션 샘플에서는 9:11로 두 Pod가 모두 관측됐습니다.
 
 🟢 **실행**
 ```bash
@@ -741,6 +747,8 @@ before=istio-session-test-8649fc85c6-92pbm  after=istio-session-test-8649fc85c6-
 ```
 
 삭제 직후에는 EndpointSlice와 Envoy 설정 전파 중에 일시적인 503 또는 연결 실패가 발생할 수 있으므로, 최대 60초 동안 **HTTP 성공 응답의 비어 있지 않은 파드 이름**을 기다립니다. 빈 응답이나 JSON 파싱 실패는 재매핑 성공으로 인정하지 않습니다.
+
+2026-08-13 Korea Central 리허설에서도 sticky Pod를 삭제한 뒤 같은 쿠키가 다른 Pod로 재매핑됐습니다.
 
 이 재매핑이 이번 실험의 핵심 차이입니다. 즉, 이 방식은 “한 번 정해진 세션이 절대 바뀌지 않는 외부 저장소형 매핑”이 아니라, **현재 엔드포인트 집합에 대한 consistent hash** 입니다. 따라서 파드가 사라지거나 새 파드로 교체되면 같은 쿠키라도 다른 대상이 선택될 수 있습니다.
 
@@ -890,6 +898,8 @@ rm -f "$REQUEST_32" "$REQUEST_33" "$RESPONSE_32" "$RESPONSE_33"
 33 KiB: status=413
 ```
 
+2026-08-13 Korea Central 리허설에서 EnvoyFilter 적용 후 선택된 두 Gateway Pod(`istio-session-gateway-istio-7f649865d6-mwpzf`, `istio-session-gateway-istio-7f649865d6-rxcjb`) 모두의 config dump에서 `max_request_bytes: 32768`이 3초 만에 확인됐습니다. 이어서 실행한 32 KiB 요청은 HTTP `200`과 `received_bytes=32768`을, 33 KiB 요청은 HTTP `413`을 반환했습니다.
+
 이 실험은 Envoy buffer filter가 요청 본문을 **전부 버퍼링한 뒤** `max_request_bytes`를 적용하는지 확인하는 수준입니다. 따라서 streaming 업로드의 부분 전달, chunk 단위 처리, back-pressure 동작 전체까지 증명하지는 못합니다.
 
 ---
@@ -949,7 +959,7 @@ done
 32 KiB: status=200 header_bytes=32768 pod=istio-session-test-<pod-name>
 ```
 
-2026-08-12 Korea Central focused live 검증에서 세 크기 모두 HTTP `200`과 정확한 헤더 바이트 수를 확인했습니다. sticky cookie를 재사용하지 않으므로 요청마다 선택된 Pod는 달라질 수 있습니다.
+2026-08-13 Korea Central focused live 검증에서 세 크기 모두 HTTP `200`과 정확한 헤더 바이트 수를 확인했습니다. sticky cookie를 재사용하지 않으므로 요청마다 선택된 Pod는 달라질 수 있습니다.
 
 ### 8.2 큰 응답 본문 관찰
 
@@ -990,19 +1000,20 @@ rm -rf "$COOKIE_DIR"
 32 KiB: status=200 body_bytes=32768 pod=istio-session-test-<pod-name>
 ```
 
-위 세 줄은 **2026-08-12 Korea Central focused live 검증에서 실제로 관찰한 요약값**입니다. `/body?size=8|16|32`는 모두 HTTP `200`을 반환했고, 본문 길이도 각각 `8192/16384/32768` bytes로 정확히 일치했습니다.
+위 세 줄은 **2026-08-13 Korea Central focused live 검증에서 실제로 관찰한 요약값**입니다. `/body?size=8|16|32`는 모두 HTTP `200`을 반환했고, 본문 길이도 각각 `8192/16384/32768` bytes로 정확히 일치했습니다.
 
 ---
 
 ## 9. 결과 해석
 
-| 질문 | 2026-08-12 Korea Central 리허설 기준 해석 |
+| 질문 | 2026-08-13 Korea Central 리허설 기준 해석 |
 |------|------------------------------------------|
 | `DestinationRule`이 NGINX cookie affinity를 그대로 대체할 수 있는가? | 동일 쿠키를 사용한 5회 요청은 같은 Pod로 전달됐고, 해당 Pod 삭제 후에는 다른 Pod로 재매핑됐습니다. 쿠키 기반 affinity는 동작하지만 외부 저장소형 영속 세션 매핑과는 동작 방식이 다릅니다 |
 | `proxy-buffer-size` 없이 큰 응답 헤더를 처리할 수 있는가? | 별도 NGINX annotation 없이 8/16/32 KiB 응답 헤더가 모두 HTTP `200`을 반환했고, 헤더 값도 각각 `8192/16384/32768` bytes로 확인됐습니다 |
 | `proxy-buffers`와 `proxy-busy-buffers-size`는 어떻게 관찰하는가? | 8/16/32 KiB 응답 본문이 모두 HTTP `200`을 반환했고, 본문 길이도 각각 `8192/16384/32768` bytes로 확인됐습니다. streaming 동작은 별도 시험 범위입니다 |
 | 엔드포인트가 바뀌면 어떤 일이 일어나는가? | sticky 대상 Pod를 삭제한 뒤 같은 쿠키가 새 Pod로 재매핑되어, endpoint 집합 변경이 기존 세션의 대상 선택에 반영됨을 확인했습니다 |
 | 이번 테스트의 트래픽 경로는 어디인가? | Gateway·HTTPRoute·DestinationRule·Pod 테스트는 `$ISTIO_CLUSTER`에서 수행됐습니다. 원래 `$CLUSTER`를 대상으로 하는 create·update·apply 명령은 실행하지 않았습니다 |
+| `proxy-body-size: 32k`를 EnvoyFilter로 재현할 수 있는가? | 32 KiB 요청은 HTTP `200`과 `received_bytes=32768`을 반환했고, 33 KiB 요청은 Gateway에서 HTTP `413`으로 거부됐습니다 |
 
 ---
 
