@@ -4,9 +4,9 @@
 
 예상 소요 시간: 10–15분 (두 번째 AKS 클러스터 생성과 EnvoyFilter 전파 대기 포함; 2026-08-13 Korea Central 리허설 실측: 전체 약 13분(774초), 두 번째 클러스터 생성 282초, EnvoyFilter 전파 3초)
 
-> **독립 옵션 모듈**: [02 — 환경 준비](02-environment-setup.md) 이후 언제든 수행할 수 있습니다. 원래 `$CLUSTER`와 03–08에서 이미 만들어 둔 Gateway 경로가 있다면 그대로 두고, 같은 리소스 그룹에 Istio 전용 AKS 클러스터를 하나 더 만듭니다. 완료 후 원래 kubectl context로 복귀하므로 03–08을 계속 진행하거나 [10 — 정리](10-cleanup.md)로 이동할 수 있습니다.
+> **독립 옵션 모듈**: [02 — 환경 준비](02-environment-setup.md) 이후 언제든 수행할 수 있습니다. 원래 `$CLUSTER`와 03–08에서 이미 만들어 둔 Gateway 경로가 있다면 그대로 두고, 같은 리소스 그룹에 Istio 전용 AKS 클러스터를 하나 더 만듭니다. 완료 후 [10 — 정리](10-cleanup.md)로 이동해 두 클러스터를 함께 삭제합니다.
 
-이 옵션은 **원래 Application Routing 클러스터와 03–08에서 이미 생성한 경로를 건드리지 않은 채**, 같은 리소스 그룹에 `aks-istio-$SUFFIX` 클러스터를 추가로 만들고 그 안에서 `GatewayClass/istio`, `HTTPRoute`, `DestinationRule`, `EnvoyFilter`를 사용해 쿠키 기반 일관 해시와 **요청 본문 제한·큰 응답 헤더·큰 응답 본문 동작**을 관찰하는 실험입니다. 이번 세션 테스트의 HTTP 요청·Gateway·Pod 관찰값은 모두 **새 Istio 클러스터**에서만 발생하며, 원래 `$CLUSTER`는 시작 context를 저장하고 끝에 복귀할 때만 사용합니다.
+이 옵션은 **원래 Application Routing 클러스터와 03–08에서 이미 생성한 경로를 건드리지 않은 채**, 같은 리소스 그룹에 `aks-istio-$SUFFIX` 클러스터를 추가로 만들고 그 안에서 `GatewayClass/istio`, `HTTPRoute`, `DestinationRule`, `EnvoyFilter`를 사용해 쿠키 기반 일관 해시와 **요청 본문 제한·큰 응답 헤더·큰 응답 본문 동작**을 관찰하는 실험입니다. 이번 세션 테스트의 HTTP 요청·Gateway·Pod 관찰값은 모두 **새 Istio 클러스터**에서만 발생하며, 원래 `$CLUSTER`를 대상으로 하는 명령은 실행하지 않습니다.
 
 👁️ **예시**
 ```mermaid
@@ -65,31 +65,23 @@ else
 fi
 # 이전 모듈에서 저장한 공통 환경 변수를 복원합니다.
 source ~/.approuting-ws-env
-# 원래 Application Routing 클러스터의 자격 증명과 context를 복원합니다.
-az aks get-credentials \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "$CLUSTER" \
-  --overwrite-existing
 ```
 
 </details>
 
-`ORIGINAL_CONTEXT`는 모듈 마지막에 기본 실습 클러스터로 돌아올 때 사용하므로, 이 모듈에서 별도로 저장합니다.
-
 🟢 **실행**
 ```bash
-# 원래 context를 저장하고 별도 Istio 클러스터 이름을 설정합니다.
-export ORIGINAL_CONTEXT=$(kubectl config current-context)
+# 별도 Istio 클러스터 이름을 설정합니다.
 export ISTIO_CLUSTER="aks-istio-$SUFFIX"
 echo "RESOURCE_GROUP=$RESOURCE_GROUP  LOCATION=$LOCATION"
-echo "ORIGINAL_CLUSTER=$CLUSTER  ORIGINAL_CONTEXT=$ORIGINAL_CONTEXT"
+echo "ORIGINAL_CLUSTER=$CLUSTER"
 echo "ISTIO_CLUSTER=$ISTIO_CLUSTER  APP_NAMESPACE=$APP_NAMESPACE"
 ```
 
 📋 **예상 출력**
 ```text
 RESOURCE_GROUP=rg-approuting-ws-35448  LOCATION=koreacentral
-ORIGINAL_CLUSTER=aks-approuting-ws-35448  ORIGINAL_CONTEXT=aks-approuting-ws-35448
+ORIGINAL_CLUSTER=aks-approuting-ws-35448
 ISTIO_CLUSTER=aks-istio-35448  APP_NAMESPACE=workshop
 ```
 
@@ -1015,27 +1007,6 @@ rm -rf "$COOKIE_DIR"
 | 이번 테스트의 트래픽 경로는 어디인가? | Gateway·HTTPRoute·DestinationRule·Pod 테스트는 `$ISTIO_CLUSTER`에서 수행됐습니다. 원래 `$CLUSTER`를 대상으로 하는 create·update·apply 명령은 실행하지 않았습니다 |
 | `proxy-body-size: 32k`를 EnvoyFilter로 재현할 수 있는가? | 32 KiB 요청은 HTTP `200`과 `received_bytes=32768`을 반환했고, 33 KiB 요청은 Gateway에서 HTTP `413`으로 거부됐습니다 |
 
----
-
-## 10. 원래 클러스터 context 복귀
-
-모듈 09의 테스트 리소스는 `$ISTIO_CLUSTER`에 남아 있으며, [10 — 정리](10-cleanup.md)에서 함께 삭제합니다. 기본 모듈 03–08을 이어서 진행하려면 kubectl context만 원래 클러스터로 되돌립니다.
-
-🟢 **실행**
-```bash
-# kubectl을 실습 시작 시 저장한 원래 클러스터 context로 되돌립니다.
-kubectl config use-context "$ORIGINAL_CONTEXT"
-kubectl config current-context
-```
-
-📋 **예상 출력**
-```text
-Switched to context "aks-approuting-ws-35448".
-aks-approuting-ws-35448
-```
-
-원래 kubectl context로 돌아왔으면 03–08 실습을 계속 진행하거나 [10 — 정리](10-cleanup.md)로 이동합니다.
-
 ## 트러블슈팅
 
 | 증상 | 원인 | 진단 | 조치 |
@@ -1051,8 +1022,7 @@ aks-approuting-ws-35448
 | `EnvoyFilter`는 존재하지만 하나 이상 Gateway Pod의 config dump에서 `max_request_bytes`가 보이지 않음 | EnvoyFilter 전파가 아직 끝나지 않았거나 selector가 일부 Pod를 놓침 (`envoy.filters.http.buffer`라는 필터 이름은 EnvoyFilter 적용 여부와 무관하게 Envoy 내장 확장 레지스트리에 항상 나타나므로 진단 신호로 쓰지 않습니다) | `kubectl get envoyfilter istio-session-body-limit -n "$APP_NAMESPACE" -o yaml`, `kubectl get pods -n "$APP_NAMESPACE" -l gateway.networking.k8s.io/gateway-name=istio-session-gateway --field-selector=status.phase=Running -o name`, 그리고 `kubectl exec -n "$APP_NAMESPACE" "$GATEWAY_POD" -c istio-proxy -- pilot-agent request GET config_dump \| grep -n 'max_request_bytes'`로 리소스와 각 Pod의 config dump를 확인합니다 | `ENVOY_FILTER_READY=true`가 될 때까지 2–3초 간격으로 다시 확인하고, 특정 Pod만 계속 누락되면 해당 Pod를 재시작한 뒤 config dump를 다시 확인합니다 |
 | 32 KiB 요청이 `200`이 아니거나 `received_bytes`가 `32768`이 아님 | EnvoyFilter가 너무 일찍 차단했거나, 요청이 `/upload`가 아닌 다른 경로로 갔거나, 응답 JSON을 제대로 읽지 못함 | `REQUEST_32=.body-limit-32.bin; RESPONSE_32=.body-limit-32.json; head -c $((32 * 1024)) /dev/zero > "$REQUEST_32"; STATUS_32=$(curl -sS --max-time 15 -H 'Content-Type: application/octet-stream' --data-binary @"$REQUEST_32" -o "$RESPONSE_32" -w '%{http_code}' "http://$ISTIO_GATEWAY_IP/upload"); echo "STATUS_32=$STATUS_32"; cat "$RESPONSE_32"; jq -r '.received_bytes' "$RESPONSE_32"; rm -f "$REQUEST_32" "$RESPONSE_32"`로 상태 코드와 응답 파일을 함께 확인합니다 | `/upload` 응답 JSON에 `received_bytes=32768`이 찍힐 때까지 경로·Gateway IP·EnvoyFilter 적용 상태를 다시 점검한 뒤 재시도합니다 |
 | 33 KiB 요청이 `413`으로 거부되지 않음 | 요청 본문 제한이 아직 적용되지 않았거나 다른 Gateway Pod로 요청이 분산됨 | `REQUEST_33=.body-limit-33.bin; RESPONSE_33=.body-limit-33.txt; head -c $((33 * 1024)) /dev/zero > "$REQUEST_33"; STATUS_33=$(curl -sS --max-time 15 -H 'Content-Type: application/octet-stream' --data-binary @"$REQUEST_33" -o "$RESPONSE_33" -w '%{http_code}' "http://$ISTIO_GATEWAY_IP/upload"); echo "STATUS_33=$STATUS_33"; cat "$RESPONSE_33"; rm -f "$REQUEST_33" "$RESPONSE_33"`와 `kubectl exec -n "$APP_NAMESPACE" "$GATEWAY_POD" -c istio-proxy -- pilot-agent request GET config_dump \| grep -n 'max_request_bytes'`로 HTTP 상태와 Gateway config를 함께 확인합니다 | 모든 Running Gateway Pod에서 `max_request_bytes: 32768`이 확인된 뒤 다시 33 KiB 요청을 보내고, 계속 `413`이 아니면 selector와 EnvoyFilter 매니페스트를 다시 검토합니다 |
-| 마지막 current-context가 원래 클러스터와 다름 | 모듈 09의 Istio context에서 아직 돌아오지 않음 | `kubectl config current-context`로 현재 값을 확인합니다 | `kubectl config use-context "$ORIGINAL_CONTEXT"`로 원래 클러스터에 복귀합니다 |
 
 ---
 
-[← 02 — 환경 준비](02-environment-setup.md) | 다음: [03 — Gateway·HTTPRoute로 HTTP 노출](03-gateway-httproute.md) 또는 [10 — 정리](10-cleanup.md)
+[← 02 — 환경 준비](02-environment-setup.md) | 다음: [10 — 정리](10-cleanup.md)
