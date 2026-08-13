@@ -261,6 +261,7 @@ istio   istio.io/gateway-controller True       13m
 
 👁️ **예시** — `manifests/istio-session-test-app.yaml` 전체
 ```yaml
+# 별도 이미지 빌드 없이 테스트용 HTTP 서버 코드를 Pod에 주입합니다.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -340,6 +341,7 @@ data:
 
     ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
 ---
+# 두 Pod를 배포해 동일 쿠키의 고정과 Pod 삭제 후 재매핑을 관찰합니다.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -354,6 +356,7 @@ spec:
       labels:
         app: istio-session-test
     spec:
+      # Pod와 볼륨 파일을 non-root 사용자로 실행합니다.
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -365,6 +368,7 @@ spec:
         command: ["python", "/app/server.py"]
         env:
         - name: POD_NAME
+          # Downward API로 실제 Pod 이름을 응답에 포함합니다.
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
@@ -399,10 +403,12 @@ spec:
           mountPath: /app
           readOnly: true
       volumes:
+      # ConfigMap의 server.py를 컨테이너의 /app에 읽기 전용으로 마운트합니다.
       - name: app
         configMap:
           name: istio-session-test
 ---
+# HTTPRoute와 DestinationRule이 함께 참조하는 공통 백엔드입니다.
 apiVersion: v1
 kind: Service
 metadata:
