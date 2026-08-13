@@ -87,54 +87,56 @@ ISTIO_CLUSTER=aks-istio-35448  APP_NAMESPACE=workshop
 
 ---
 
-## 1. 별도 Istio 클러스터 선택 — 기존 호환 클러스터 재사용 또는 새로 생성
+## 1. 별도 Istio 클러스터 새로 생성
 
-같은 이름의 `$ISTIO_CLUSTER`가 이미 있으면 먼저 재사용 가능한지 확인하고, 없으면 Korea Central의 기본 AKS 버전과 호환되는 Istio revision으로 새 클러스터를 만듭니다. 아래 블록은 **재사용 경로와 신규 생성 경로를 한 번에 처리**합니다.
+Korea Central의 기본 AKS 버전과 호환되는 Istio revision을 선택해 새 `$ISTIO_CLUSTER`를 만듭니다. 같은 이름의 클러스터가 이미 있으면 기존 리소스를 재사용하지 않고 중단하므로, 새 `SUFFIX`로 다시 시작합니다.
 
 ⏳ **기다리는 동안 읽기**: `az aks create`가 이 모듈의 가장 긴 대기 구간입니다. 새 클러스터가 올라오는 동안 아래 3–4절에 있는 `테스트 애플리케이션 전체 YAML 보기`를 펼쳐서 읽고 `manifests/istio-session-test-routing.yaml`도 함께 살펴보면, 이후 apply 단계에서 각 필드의 의미를 빠르게 확인할 수 있습니다.
 
 🟢 **실행**
 ```bash
-# 같은 이름의 호환 클러스터가 있으면 재사용하고, 없으면 새로 만듭니다.
+# 같은 이름의 클러스터가 있으면 재사용하지 않고 새 SUFFIX를 요구합니다.
 if az aks show \
   --resource-group "$RESOURCE_GROUP" \
   --name "$ISTIO_CLUSTER" \
   -o none 2>/dev/null; then
-  echo "기존 Istio 옵션 클러스터를 재사용합니다: $ISTIO_CLUSTER"
-else
-  # 지역 기본 AKS 버전과 호환되는 최신 Istio revision을 선택합니다.
-  export ISTIO_K8S_VERSION=$(az aks get-versions \
-    --location "$LOCATION" \
-    --query "values[?isDefault].version | [0]" \
-    -o tsv)
-  export ISTIO_MINOR=$(echo "$ISTIO_K8S_VERSION" | cut -d. -f1-2)
-  export REVISION=$(az aks mesh get-revisions \
-    --location "$LOCATION" \
-    --query "meshRevisions[?compatibleWith[?name=='KubernetesOfficial' && contains(versions, '$ISTIO_MINOR')]].revision | [-1]" \
-    -o tsv)
-  echo "ISTIO_K8S_VERSION=$ISTIO_K8S_VERSION  REVISION=$REVISION"
-  # Gateway API를 지원하는 asm-1-26 이상인지 생성 전에 검사합니다.
-  [ -n "$ISTIO_K8S_VERSION" ] && [[ "$REVISION" =~ ^asm-1-([0-9]+)$ ]] \
-    && [ "${BASH_REMATCH[1]}" -ge 26 ] || {
-    echo "Korea Central 기본 AKS 버전과 호환되는 asm-1-26 이상 revision을 찾지 못했습니다."
-    exit 1
-  }
-
-  # Gateway API와 AKS Istio add-on을 한 번의 클러스터 생성에 활성화합니다.
-  az aks create \
-    --resource-group "$RESOURCE_GROUP" \
-    --name "$ISTIO_CLUSTER" \
-    --location "$LOCATION" \
-    --kubernetes-version "$ISTIO_K8S_VERSION" \
-    --node-count 2 \
-    --node-vm-size Standard_D2s_v5 \
-    --enable-gateway-api \
-    --enable-asm \
-    --revision "$REVISION" \
-    --generate-ssh-keys
+  echo "같은 이름의 클러스터가 이미 있습니다: $ISTIO_CLUSTER"
+  echo "새 SUFFIX로 02 모듈부터 다시 시작하세요."
+  exit 1
 fi
 
-# 재사용 여부와 관계없이 실제 클러스터 버전과 revision을 다시 읽습니다.
+# 지역 기본 AKS 버전과 호환되는 최신 Istio revision을 선택합니다.
+export ISTIO_K8S_VERSION=$(az aks get-versions \
+  --location "$LOCATION" \
+  --query "values[?isDefault].version | [0]" \
+  -o tsv)
+export ISTIO_MINOR=$(echo "$ISTIO_K8S_VERSION" | cut -d. -f1-2)
+export REVISION=$(az aks mesh get-revisions \
+  --location "$LOCATION" \
+  --query "meshRevisions[?compatibleWith[?name=='KubernetesOfficial' && contains(versions, '$ISTIO_MINOR')]].revision | [-1]" \
+  -o tsv)
+echo "ISTIO_K8S_VERSION=$ISTIO_K8S_VERSION  REVISION=$REVISION"
+# Gateway API를 지원하는 asm-1-26 이상인지 생성 전에 검사합니다.
+[ -n "$ISTIO_K8S_VERSION" ] && [[ "$REVISION" =~ ^asm-1-([0-9]+)$ ]] \
+  && [ "${BASH_REMATCH[1]}" -ge 26 ] || {
+  echo "Korea Central 기본 AKS 버전과 호환되는 asm-1-26 이상 revision을 찾지 못했습니다."
+  exit 1
+}
+
+# Gateway API와 AKS Istio add-on을 한 번의 클러스터 생성에 활성화합니다.
+az aks create \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "$ISTIO_CLUSTER" \
+  --location "$LOCATION" \
+  --kubernetes-version "$ISTIO_K8S_VERSION" \
+  --node-count 2 \
+  --node-vm-size Standard_D2s_v5 \
+  --enable-gateway-api \
+  --enable-asm \
+  --revision "$REVISION" \
+  --generate-ssh-keys
+
+# 생성된 클러스터의 실제 버전과 revision을 다시 읽어 검증합니다.
 export ISTIO_K8S_VERSION=$(az aks show \
   --resource-group "$RESOURCE_GROUP" \
   --name "$ISTIO_CLUSTER" \
@@ -144,7 +146,7 @@ export REVISION=$(az aks show \
   --name "$ISTIO_CLUSTER" \
   --query 'serviceMeshProfile.istio.revisions[0]' -o tsv)
 [[ "$REVISION" =~ ^asm-1-([0-9]+)$ ]] && [ "${BASH_REMATCH[1]}" -ge 26 ] || {
-  echo "기존 또는 신규 클러스터의 Istio revision이 asm-1-26 이상이 아닙니다."
+  echo "생성된 클러스터의 Istio revision이 asm-1-26 이상이 아닙니다."
   exit 1
 }
 echo "EFFECTIVE_K8S_VERSION=$ISTIO_K8S_VERSION  EFFECTIVE_REVISION=$REVISION"
@@ -152,7 +154,7 @@ echo "EFFECTIVE_K8S_VERSION=$ISTIO_K8S_VERSION  EFFECTIVE_REVISION=$REVISION"
 
 🟢 **실행**
 ```bash
-# 새 터미널에서도 재사용하도록 기존 값을 제거한 뒤 현재 값을 저장합니다.
+# 후속 단계와 10 모듈에서도 사용하도록 기존 값을 제거한 뒤 현재 값을 저장합니다.
 sed -i \
   -e '/^export ISTIO_CLUSTER=/d' \
   -e '/^export ISTIO_K8S_VERSION=/d' \
@@ -169,9 +171,7 @@ ISTIO_K8S_VERSION=1.35  REVISION=asm-1-30
 EFFECTIVE_K8S_VERSION=1.35  EFFECTIVE_REVISION=asm-1-30
 ```
 
-이미 같은 이름의 클러스터가 있더라도, 마지막 fail-fast 검사가 **Istio mode 여부와 `asm-1-26` 이상 revision 여부**를 강제로 확인합니다. 즉, 이름만 같고 호환되지 않는 클러스터는 여기서 바로 중단됩니다.
-
-2026-08-13 Korea Central 리허설에서는 신규 `SUFFIX`를 사용해 재사용 경로가 아닌 **신규 생성 경로**를 실제로 거쳤고, `$ISTIO_CLUSTER` 생성에 282초(약 4분 42초)가 걸렸습니다.
+2026-08-13 Korea Central 리허설에서는 신규 `SUFFIX`로 `$ISTIO_CLUSTER`를 새로 생성했고, 생성에 282초(약 4분 42초)가 걸렸습니다.
 
 ---
 
@@ -1012,7 +1012,7 @@ rm -rf "$COOKIE_DIR"
 | 증상 | 원인 | 진단 | 조치 |
 |------|------|------|------|
 | `ISTIO_K8S_VERSION` 또는 `REVISION` 값이 비어 있음 | 지역 기본 버전 또는 호환 revision 조회가 실패함 | `az aks get-versions --location "$LOCATION" -o table`와 `az aks mesh get-revisions --location "$LOCATION" -o table`로 값을 다시 조회합니다 | 클러스터 생성 전에 중단하고, 지원되는 버전·revision 조합을 다시 선택합니다 |
-| 기존 `$ISTIO_CLUSTER`가 `Istio` mode가 아니거나 revision이 `asm-1-26` 미만임 | 같은 이름의 비호환 클러스터가 이미 존재함 | `az aks show --resource-group "$RESOURCE_GROUP" --name "$ISTIO_CLUSTER" --query '{mode:serviceMeshProfile.mode, revision:serviceMeshProfile.istio.revisions[0], kubernetesVersion:kubernetesVersion}' -o yaml`로 상태를 확인합니다 | 새 `SUFFIX`를 사용해 다른 이름으로 만들거나, 기존 비호환 워크숍 클러스터를 제거한 뒤 다시 진행합니다 |
+| `같은 이름의 클러스터가 이미 있습니다`가 출력됨 | 이전 실습에서 만든 `$ISTIO_CLUSTER`가 남아 있어 신규 생성을 시작할 수 없음 | `az aks show --resource-group "$RESOURCE_GROUP" --name "$ISTIO_CLUSTER" --query '{name:name,state:provisioningState}' -o table`로 남은 클러스터를 확인합니다 | [10 — 정리](10-cleanup.md)로 기존 실습 리소스를 삭제하거나 새 `SUFFIX`로 02 모듈부터 다시 시작합니다 |
 | `az aks create`가 quota 또는 SKU capacity 오류로 실패함 | `StandardDSv5Family` 쿼터 부족 또는 지역 용량 부족 | Azure 오류 메시지와 구독 quota 상태를 확인합니다 | quota 증가 요청 또는 승인된 용량으로 재시도하고, 원래 `$CLUSTER`는 수정하지 않습니다 |
 | 요청한 revision의 `istiod`가 Running이 아님 | control plane 초기화 지연 또는 스케줄링 실패 | `kubectl get pods -n aks-istio-system`, `kubectl get events -n aks-istio-system --sort-by=.lastTimestamp \| tail -20`으로 원인을 봅니다 | 잠시 기다립니다. `Unschedulable`과 `Insufficient cpu`가 함께 확인되면 `az aks scale --resource-group "$RESOURCE_GROUP" --name "$ISTIO_CLUSTER" --node-count 3`으로 확장합니다 |
 | 생성된 Gateway Pod가 `Pending`이거나 `Gateway/istio-session-gateway`가 `Programmed=False`로 머묾 | Gateway 프록시가 스케줄되지 못함 | `kubectl get deployment,service -n "$APP_NAMESPACE" istio-session-gateway-istio`, `kubectl get pods -n "$APP_NAMESPACE"`, `kubectl get events -n "$APP_NAMESPACE" --sort-by=.lastTimestamp \| tail -20`로 상태를 확인합니다 | `Unschedulable`과 `Insufficient cpu`가 함께 확인되면 `az aks scale --resource-group "$RESOURCE_GROUP" --name "$ISTIO_CLUSTER" --node-count 3`으로 확장한 뒤 `kubectl wait --for=condition=Programmed=True gateway/istio-session-gateway -n "$APP_NAMESPACE" --timeout=300s`로 다시 확인합니다 |
