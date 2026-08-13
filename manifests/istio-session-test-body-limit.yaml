@@ -1,0 +1,27 @@
+# Gateway API가 자동 생성한 istio-session-gateway Pod에만 요청 본문 제한을 적용합니다.
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: istio-session-body-limit
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: istio-session-gateway
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+            subFilter:
+              name: envoy.filters.http.router
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.buffer
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.buffer.v3.Buffer
+          # nginx.ingress.kubernetes.io/proxy-body-size: 32k와 같은 32 KiB 제한입니다.
+          max_request_bytes: 32768

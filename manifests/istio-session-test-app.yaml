@@ -50,6 +50,30 @@ data:
                 return None
             return size_kib
 
+        def do_POST(self):
+            request = urlparse(self.path)
+            if request.path != "/upload":
+                self.send_json(404, {"error": "not found"})
+                return
+            # 요청 본문을 저장하지 않고 선언된 길이만큼 읽어 실제 수신 byte 수를 확인합니다.
+            try:
+                content_length = int(self.headers.get("Content-Length", ""))
+            except ValueError:
+                self.send_json(400, {"error": "valid Content-Length required"})
+                return
+            if content_length < 0:
+                self.send_json(400, {"error": "valid Content-Length required"})
+                return
+            body = self.rfile.read(content_length)
+            if len(body) != content_length:
+                self.send_json(400, {"error": "incomplete request body"})
+                return
+            # Gateway를 통과해 Pod가 받은 정확한 byte 수와 처리 Pod만 JSON으로 반환합니다.
+            self.send_json(
+                200,
+                {"pod": POD_NAME, "received_bytes": len(body)},
+            )
+
         def do_GET(self):
             request = urlparse(self.path)
             # /healthz는 Probe에, /identity는 cookie affinity 확인에 사용합니다.
