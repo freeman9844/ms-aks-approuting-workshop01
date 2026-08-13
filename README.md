@@ -51,7 +51,7 @@ flowchart LR
 6. (옵션) 자동 생성되는 Gateway 인프라(Service·Deployment·HPA·PDB)를 ConfigMap으로 재정의하고, Annotation으로 내부 Load Balancer 전환을 수행한다.
 7. (옵션) Azure Front Door에서 TLS offloading을 구성하고, ingress-nginx와 Gateway API 데이터 플레인을 병렬 구성해 가중치 카나리 마이그레이션을 수행한다.
 8. Gateway annotation이 generated Service에 전달되는지와 Private Link Service/Private Endpoint 연결을 검증한다.
-9. (옵션) 같은 리소스 그룹에 Istio 전용 AKS 클러스터를 추가하고, `DestinationRule` 쿠키 consistent hash와 8/16/32 KiB 응답 헤더·본문을 관찰한다.
+9. (옵션) 같은 리소스 그룹에 Istio 전용 AKS 클러스터를 추가하고, `DestinationRule` 쿠키 consistent hash·`EnvoyFilter` 32 KiB 요청 본문 제한(32 KiB 허용·33 KiB는 `413`)·8/16/32 KiB 응답 헤더·본문을 관찰한다.
 10. 실습에 사용한 모든 Azure 리소스를 완전히 정리한다.
 
 ---
@@ -79,7 +79,7 @@ flowchart LR
 | 06 | [Gateway 인프라 커스터마이징 (옵션)](docs/06-gateway-customizations.md) | ConfigMap으로 HPA·Deployment 재정의, Annotation으로 내부 LB 전환 |
 | 07 | [AFD 카나리 마이그레이션 (옵션)](docs/07-afd-canary-migration.md) | AFD TLS offloading, ingress-nginx ∥ Gateway API 병렬 구성, 가중치 카나리로 무중단 이관 |
 | 08 | [Gateway API Private Link Service 검증 (옵션)](docs/08-private-link-service.md) | Gateway annotation 전달과 Private Endpoint/ACI로 private data path 확인 |
-| 09 | [Istio Gateway API 쿠키 일관 해시·응답 헤더·본문 검증 (옵션)](docs/09-istio-cookie-affinity.md) | 별도 Istio AKS 생성, DestinationRule 쿠키 일관 해시, 8/16/32 KiB 응답 헤더·본문 관찰 |
+| 09 | [Istio Gateway API 쿠키 일관 해시·응답 헤더·본문 검증 (옵션)](docs/09-istio-cookie-affinity.md) | 별도 Istio AKS 생성, DestinationRule 쿠키 일관 해시, EnvoyFilter 32 KiB 요청 본문 제한(32 KiB 허용·33 KiB `413`), 8/16/32 KiB 응답 헤더·본문 관찰 |
 | 10 | [정리](docs/10-cleanup.md) | 전체 Azure 리소스 삭제 |
 
 07과 08은 기존 Application Routing Gateway 상태를 변경하는 옵션입니다. 09는 별도 클러스터를 사용하므로 02 이후 독립적으로 수행할 수 있으며, 07·08 전후에도 실행할 수 있습니다.
@@ -100,9 +100,9 @@ flowchart LR
 | 06 | Gateway 인프라 커스터마이징 (옵션) | 10–15분 | HPA 반영·내부 LB 재구성 대기 |
 | 07 | AFD 카나리 마이그레이션 (옵션) | 50–90분 | AFD 라우트·가중치 변경 전파 대기 (회당 5–30분) |
 | 08 | Gateway API Private Link Service 검증 (옵션) | 15–20분 (Private Endpoint 승인·ACI 통신 확인 대기 포함; 2026-08-11 리허설 실측: Gateway 패치→ACI HTTP 200 확인까지 순수 Azure 작업 시간 약 6분) | Private Endpoint 승인·ACI 통신 확인 |
-| 09 | Istio Gateway API 쿠키 일관 해시·응답 헤더·본문 검증 (옵션) | 8–12분 (2026-08-12 Korea Central 리허설 실측: 원래 Gateway 보존 검증 포함 약 9분, `az aks create` 약 6분) | 두 번째 AKS 클러스터 생성 |
+| 09 | Istio Gateway API 쿠키 일관 해시·응답 헤더·본문 검증 (옵션) | 10–15분 (두 번째 AKS 클러스터 생성과 EnvoyFilter 전파 대기 포함) | 두 번째 AKS 클러스터 생성 |
 | 10 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
-| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +15–20분, 09 옵션 +8–12분)** | |
+| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +15–20분, 09 옵션 +10–15분)** | |
 
 ---
 
@@ -183,6 +183,10 @@ AKS 노드 리소스 그룹(`MC_...`) 내부 리소스는 AKS가 자동 관리�
 - [Gateway API 공식 문서](https://gateway-api.sigs.k8s.io/)
 - [ExternalDNS 공식 문서](https://kubernetes-sigs.github.io/external-dns/latest/) — 05 모듈 옵션의 upstream 프로젝트
 - [Istio DestinationRule 레퍼런스](https://istio.io/latest/docs/reference/config/networking/destination-rule/) — 09 모듈 `consistentHash.httpCookie` 설정 배경
+- [Istio EnvoyFilter API](https://istio.io/latest/docs/reference/config/networking/envoy-filter/) — 09 모듈 Gateway 데이터 평면 필터 설정
+- [Envoy HTTP buffer filter](https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/http/buffer/v3/buffer.proto) — `max_request_bytes` 동작
+- [AKS NGINX→Istio Gateway API migration reference](https://github.com/eggboy/AKS/tree/main/Ingress/Nginx-Migration/Istio-Addon-GatewayAPI#63-envoyfilter-only-where-no-native-knob-exists) — `proxy-body-size` 매핑 참고
 - [Istio httpbin 샘플](https://github.com/istio/istio/tree/master/samples/httpbin) — 03 모듈에서 배포하는 샘플 앱
 - [ingress-nginx session affinity annotations](https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#session-affinity) — 09 모듈 비교 대상
+- [ingress-nginx proxy body size annotation](https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#custom-max-body-size) — 비교 대상
 - [ingress-nginx proxy buffer size annotations](https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#proxy-buffer-size) — 09 모듈 응답 헤더 비교 대상
