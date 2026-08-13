@@ -23,5 +23,5 @@ spec:
         name: envoy.filters.http.buffer
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.filters.http.buffer.v3.Buffer
-          # nginx.ingress.kubernetes.io/proxy-body-size: 32k와 같은 32 KiB 제한입니다.
-          max_request_bytes: 32768
+          # nginx.ingress.kubernetes.io/proxy-body-size: 128k와 같은 128 KiB 제한입니다.
+          max_request_bytes: 131072

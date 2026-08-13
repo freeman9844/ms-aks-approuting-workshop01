@@ -2,7 +2,7 @@
 
 > 🟢 실행 = 직접 입력·수행 · 👁️ 예시 = 눈으로만(개념/발췌) · 📋 예상 출력 = 비교용(입력 불필요)
 
-예상 소요 시간: 10–15분 (두 번째 AKS 클러스터 생성과 EnvoyFilter 전파 대기 포함; 2026-08-13 Korea Central 리허설 실측: 전체 약 13분(774초), 두 번째 클러스터 생성 282초, EnvoyFilter 전파 3초)
+예상 소요 시간: 8–13분 (두 번째 AKS 클러스터 생성과 EnvoyFilter 전파 대기 포함; 2026-08-13 Korea Central 리허설 실측(128 KiB 제한 기준): 전체 약 8분(465초), 두 번째 클러스터 생성 348초, EnvoyFilter 전파 32초)
 
 > **독립 옵션 모듈**: [02 — 환경 준비](02-environment-setup.md) 이후 언제든 수행할 수 있습니다. 원래 `$CLUSTER`와 03–08에서 이미 만들어 둔 Gateway 경로가 있다면 그대로 두고, 같은 리소스 그룹에 Istio 전용 AKS 클러스터를 하나 더 만듭니다. 완료 후 [10 — 정리](10-cleanup.md)로 이동해 두 클러스터를 함께 삭제합니다.
 
@@ -171,7 +171,7 @@ ISTIO_K8S_VERSION=1.35  REVISION=asm-1-30
 EFFECTIVE_K8S_VERSION=1.35  EFFECTIVE_REVISION=asm-1-30
 ```
 
-2026-08-13 Korea Central 리허설에서는 신규 `SUFFIX`로 `$ISTIO_CLUSTER`를 새로 생성했고, 생성에 282초(약 4분 42초)가 걸렸습니다.
+2026-08-13 Korea Central 리허설(128 KiB 제한 기준)에서는 신규 `SUFFIX`로 `$ISTIO_CLUSTER`를 새로 생성했고, 생성에 348초(약 5분 48초)가 걸렸습니다.
 
 ---
 
@@ -746,7 +746,7 @@ before=istio-session-test-8649fc85c6-92pbm  after=istio-session-test-8649fc85c6-
 
 ---
 
-## 7. EnvoyFilter로 32 KiB 요청 본문 제한
+## 7. EnvoyFilter로 128 KiB 요청 본문 제한
 
 `nginx.ingress.kubernetes.io/proxy-body-size`는 업스트림 응답이 아니라 **클라이언트 요청 본문**의 최대 크기를 제한합니다. 따라서 아래 실험은 8절의 큰 응답 헤더·본문 관찰과 별개로, Gateway 데이터 평면에서 `/upload` 요청이 어디서 차단되는지 확인하는 절입니다.
 
@@ -779,8 +779,8 @@ spec:
         name: envoy.filters.http.buffer
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.filters.http.buffer.v3.Buffer
-          # nginx.ingress.kubernetes.io/proxy-body-size: 32k와 같은 32 KiB 제한입니다.
-          max_request_bytes: 32768
+          # nginx.ingress.kubernetes.io/proxy-body-size: 128k와 같은 128 KiB 제한입니다.
+          max_request_bytes: 131072
 ```
 
 | 필드 | 역할 |
@@ -788,7 +788,7 @@ spec:
 | `workloadSelector.labels.gateway.networking.k8s.io/gateway-name=istio-session-gateway` | 자동 생성된 `istio-session-gateway` Pod에만 필터를 적용합니다 |
 | `applyTo: HTTP_FILTER` | Gateway HTTP 필터 체인에 새 필터를 삽입합니다 |
 | `match.listener.filterChain.filter.subFilter.name: envoy.filters.http.router` + `patch.operation: INSERT_BEFORE` | router 직전에 buffer filter를 끼워 넣어 요청 본문 크기를 먼저 검사합니다 |
-| `max_request_bytes: 32768` | 32 KiB를 초과하는 요청 본문을 `413`으로 거부합니다 |
+| `max_request_bytes: 131072` | 128 KiB를 초과하는 요청 본문을 `413`으로 거부합니다 |
 
 먼저 selector가 실제 Running Gateway Pod를 찾는지 확인하고, EnvoyFilter를 적용한 뒤 현재 선택된 모든 Gateway Pod의 config dump에 실제로 설정된 값인 `max_request_bytes`가 들어갔는지 검증합니다. `envoy.filters.http.buffer`라는 필터 이름은 EnvoyFilter를 적용하지 않아도 Envoy에 내장된 확장 레지스트리 목록에 항상 나타나므로, 필터가 실제로 리스너에 패치됐는지 확인하는 신호로 쓸 수 없습니다.
 
@@ -806,7 +806,7 @@ mapfile -t GATEWAY_PODS < <(kubectl get pods \
 }
 printf 'Gateway Pod: %s\n' "${GATEWAY_PODS[@]}"
 
-# 32 KiB 요청 본문 제한을 Gateway 데이터 평면에 적용합니다.
+# 128 KiB 요청 본문 제한을 Gateway 데이터 평면에 적용합니다.
 kubectl apply \
   -n "$APP_NAMESPACE" \
   -f manifests/istio-session-test-body-limit.yaml
@@ -826,7 +826,7 @@ for ATTEMPT in $(seq 1 15); do
       "$GATEWAY_POD" \
       -c istio-proxy -- \
       pilot-agent request GET config_dump 2>/dev/null |
-      grep -Fq 'max_request_bytes' ||
+      grep -Eq 'max_request_bytes[^0-9]+131072' ||
       ENVOY_FILTER_READY="false"
   done
   [ "$ENVOY_FILTER_READY" = "true" ] && break
@@ -834,7 +834,7 @@ for ATTEMPT in $(seq 1 15); do
 done
 echo "ENVOY_FILTER_READY=$ENVOY_FILTER_READY  GATEWAY_PODS=${GATEWAY_PODS[*]:-}"
 [ "$ENVOY_FILTER_READY" = "true" ] || {
-  echo "모든 Gateway Pod의 config dump에서 max_request_bytes 설정을 확인하지 못했습니다."
+  echo "모든 Gateway Pod의 config dump에서 max_request_bytes: 131072 설정을 확인하지 못했습니다."
   exit 1
 }
 ```
@@ -845,52 +845,52 @@ Gateway Pod: istio-session-gateway-istio-<pod-name>
 ENVOY_FILTER_READY=true  GATEWAY_PODS=istio-session-gateway-istio-<pod-name>
 ```
 
-이제 정확히 32 KiB와 33 KiB 요청 파일을 만들어 `/upload` 경계값을 확인합니다. 32 KiB는 애플리케이션까지 전달돼 `received_bytes=32768`을 반환해야 하고, 33 KiB는 Gateway에서 `413`으로 거부돼야 합니다.
+이제 정확히 128 KiB와 129 KiB 요청 파일을 만들어 `/upload` 경계값을 확인합니다. 128 KiB는 애플리케이션까지 전달돼 `received_bytes=131072`를 반환해야 하고, 129 KiB는 Gateway에서 `413`으로 거부돼야 합니다.
 
 🟢 **실행**
 ```bash
-export REQUEST_32=$(mktemp)
-export REQUEST_33=$(mktemp)
-export RESPONSE_32=$(mktemp)
-export RESPONSE_33=$(mktemp)
-head -c $((32 * 1024)) /dev/zero > "$REQUEST_32"
-head -c $((33 * 1024)) /dev/zero > "$REQUEST_33"
+export REQUEST_128=$(mktemp)
+export REQUEST_129=$(mktemp)
+export RESPONSE_128=$(mktemp)
+export RESPONSE_129=$(mktemp)
+head -c $((128 * 1024)) /dev/zero > "$REQUEST_128"
+head -c $((129 * 1024)) /dev/zero > "$REQUEST_129"
 
-export STATUS_32=$(curl -sS --max-time 15 \
+export STATUS_128=$(curl -sS --max-time 15 \
   -H 'Content-Type: application/octet-stream' \
-  --data-binary @"$REQUEST_32" \
-  -o "$RESPONSE_32" \
+  --data-binary @"$REQUEST_128" \
+  -o "$RESPONSE_128" \
   -w '%{http_code}' \
   "http://$ISTIO_GATEWAY_IP/upload")
-export RECEIVED_32=$(jq -er '.received_bytes' "$RESPONSE_32" 2>/dev/null) || true
+export RECEIVED_128=$(jq -er '.received_bytes' "$RESPONSE_128" 2>/dev/null) || true
 
-export STATUS_33=$(curl -sS --max-time 15 \
+export STATUS_129=$(curl -sS --max-time 15 \
   -H 'Content-Type: application/octet-stream' \
-  --data-binary @"$REQUEST_33" \
-  -o "$RESPONSE_33" \
+  --data-binary @"$REQUEST_129" \
+  -o "$RESPONSE_129" \
   -w '%{http_code}' \
   "http://$ISTIO_GATEWAY_IP/upload")
 
-echo "32 KiB: status=$STATUS_32 received_bytes=$RECEIVED_32"
-echo "33 KiB: status=$STATUS_33"
-rm -f "$REQUEST_32" "$REQUEST_33" "$RESPONSE_32" "$RESPONSE_33"
-[ "$STATUS_32" = "200" ] && [ "$RECEIVED_32" = "32768" ] || {
-  echo "32 KiB 요청이 애플리케이션에 정확히 전달되지 않았습니다."
+echo "128 KiB: status=$STATUS_128 received_bytes=$RECEIVED_128"
+echo "129 KiB: status=$STATUS_129"
+rm -f "$REQUEST_128" "$REQUEST_129" "$RESPONSE_128" "$RESPONSE_129"
+[ "$STATUS_128" = "200" ] && [ "$RECEIVED_128" = "131072" ] || {
+  echo "128 KiB 요청이 애플리케이션에 정확히 전달되지 않았습니다."
   exit 1
 }
-[ "$STATUS_33" = "413" ] || {
-  echo "33 KiB 요청이 Gateway에서 413으로 거부되지 않았습니다."
+[ "$STATUS_129" = "413" ] || {
+  echo "129 KiB 요청이 Gateway에서 413으로 거부되지 않았습니다."
   exit 1
 }
 ```
 
 📋 **예상 출력**
 ```text
-32 KiB: status=200 received_bytes=32768
-33 KiB: status=413
+128 KiB: status=200 received_bytes=131072
+129 KiB: status=413
 ```
 
-2026-08-13 Korea Central 리허설에서 EnvoyFilter 적용 후 선택된 두 Gateway Pod(`istio-session-gateway-istio-7f649865d6-mwpzf`, `istio-session-gateway-istio-7f649865d6-rxcjb`) 모두의 config dump에서 `max_request_bytes: 32768`이 3초 만에 확인됐습니다. 이어서 실행한 32 KiB 요청은 HTTP `200`과 `received_bytes=32768`을, 33 KiB 요청은 HTTP `413`을 반환했습니다.
+2026-08-13 Korea Central 리허설에서 EnvoyFilter 적용 후 선택된 두 Gateway Pod(`istio-session-gateway-istio-7f649865d6-56qxb`, `istio-session-gateway-istio-7f649865d6-688zl`) 모두의 config dump에서 `max_request_bytes: 131072`가 32초 만에 확인됐습니다. 이어서 실행한 128 KiB 요청은 HTTP `200`과 `received_bytes=131072`를, 129 KiB 요청은 HTTP `413`을 반환했습니다.
 
 이 실험은 Envoy buffer filter가 요청 본문을 **전부 버퍼링한 뒤** `max_request_bytes`를 적용하는지 확인하는 수준입니다. 따라서 streaming 업로드의 부분 전달, chunk 단위 처리, back-pressure 동작 전체까지 증명하지는 못합니다.
 
@@ -1005,7 +1005,7 @@ rm -rf "$COOKIE_DIR"
 | `proxy-buffers`와 `proxy-busy-buffers-size`는 어떻게 관찰하는가? | 8/16/32 KiB 응답 본문이 모두 HTTP `200`을 반환했고, 본문 길이도 각각 `8192/16384/32768` bytes로 확인됐습니다. streaming 동작은 별도 시험 범위입니다 |
 | 엔드포인트가 바뀌면 어떤 일이 일어나는가? | sticky 대상 Pod를 삭제한 뒤 같은 쿠키가 새 Pod로 재매핑되어, endpoint 집합 변경이 기존 세션의 대상 선택에 반영됨을 확인했습니다 |
 | 이번 테스트의 트래픽 경로는 어디인가? | Gateway·HTTPRoute·DestinationRule·Pod 테스트는 `$ISTIO_CLUSTER`에서 수행됐습니다. 원래 `$CLUSTER`를 대상으로 하는 create·update·apply 명령은 실행하지 않았습니다 |
-| `proxy-body-size: 32k`를 EnvoyFilter로 재현할 수 있는가? | 32 KiB 요청은 HTTP `200`과 `received_bytes=32768`을 반환했고, 33 KiB 요청은 Gateway에서 HTTP `413`으로 거부됐습니다 |
+| `proxy-body-size: 128k`를 EnvoyFilter로 재현할 수 있는가? | 128 KiB 요청은 HTTP `200`과 `received_bytes=131072`를 반환했고, 129 KiB 요청은 Gateway에서 HTTP `413`으로 거부됐습니다 |
 
 ## 트러블슈팅
 
@@ -1019,9 +1019,9 @@ rm -rf "$COOKIE_DIR"
 | 테스트 파드가 `1/1`이 아니라 `2/2`로 표시됨 | namespace에 injection label이 남아 sidecar가 주입됨 | `kubectl get namespace "$APP_NAMESPACE" --show-labels`와 `kubectl get pods -n "$APP_NAMESPACE" -l app=istio-session-test`로 상태를 확인합니다 | `kubectl label namespace "$APP_NAMESPACE" istio.io/rev-`와 `kubectl label namespace "$APP_NAMESPACE" istio-injection-`로 라벨을 제거한 뒤 Deployment를 다시 시작합니다 |
 | 쿠키가 발급되지 않거나, 20개 샘플에서 엔드포인트가 하나만 보이거나, 재매핑이 시간 안에 끝나지 않거나, 큰 헤더에서 non-200이 보임 | `DestinationRule` 적용 지연, ready endpoint 부족, 빈 응답/JSON 파싱 실패, 현재 버전의 헤더 한계 등 관찰값이 섞여 있음 | `grep -i '^set-cookie: workshop-session=' "$RESPONSE_HEADERS"`, `kubectl get endpointslice -n "$APP_NAMESPACE" -l kubernetes.io/service-name=istio-session-test`, 그리고 6–8절의 hardened curl/jq 명령으로 비어 있지 않은 파드 이름과 상태 코드를 다시 확인합니다 | 빈 출력에 성공 판정을 내리지 말고, 기존 hardened 명령을 유지한 채 쿠키·엔드포인트·재매핑·헤더 바이트 수를 다시 기록합니다 |
 | `gateway.networking.k8s.io/gateway-name=istio-session-gateway` selector가 Running Gateway Pod를 0개 반환함 | Gateway Pod가 아직 생성 중이거나 라벨 선택식이 맞지 않음 | `kubectl get pods -n "$APP_NAMESPACE" -l gateway.networking.k8s.io/gateway-name=istio-session-gateway --field-selector=status.phase=Running -o wide`와 `kubectl get pods -n "$APP_NAMESPACE" --show-labels`로 실제 Pod와 라벨을 함께 확인합니다 | `kubectl wait --for=condition=Programmed=True gateway/istio-session-gateway -n "$APP_NAMESPACE" --timeout=300s` 후 selector를 다시 실행하고, 여전히 0개면 현재 Gateway Pod의 실제 라벨에 맞춰 selector를 재확인합니다 |
-| `EnvoyFilter`는 존재하지만 하나 이상 Gateway Pod의 config dump에서 `max_request_bytes`가 보이지 않음 | EnvoyFilter 전파가 아직 끝나지 않았거나 selector가 일부 Pod를 놓침 (`envoy.filters.http.buffer`라는 필터 이름은 EnvoyFilter 적용 여부와 무관하게 Envoy 내장 확장 레지스트리에 항상 나타나므로 진단 신호로 쓰지 않습니다) | `kubectl get envoyfilter istio-session-body-limit -n "$APP_NAMESPACE" -o yaml`, `kubectl get pods -n "$APP_NAMESPACE" -l gateway.networking.k8s.io/gateway-name=istio-session-gateway --field-selector=status.phase=Running -o name`, 그리고 `kubectl exec -n "$APP_NAMESPACE" "$GATEWAY_POD" -c istio-proxy -- pilot-agent request GET config_dump \| grep -n 'max_request_bytes'`로 리소스와 각 Pod의 config dump를 확인합니다 | `ENVOY_FILTER_READY=true`가 될 때까지 2–3초 간격으로 다시 확인하고, 특정 Pod만 계속 누락되면 해당 Pod를 재시작한 뒤 config dump를 다시 확인합니다 |
-| 32 KiB 요청이 `200`이 아니거나 `received_bytes`가 `32768`이 아님 | EnvoyFilter가 너무 일찍 차단했거나, 요청이 `/upload`가 아닌 다른 경로로 갔거나, 응답 JSON을 제대로 읽지 못함 | `REQUEST_32=.body-limit-32.bin; RESPONSE_32=.body-limit-32.json; head -c $((32 * 1024)) /dev/zero > "$REQUEST_32"; STATUS_32=$(curl -sS --max-time 15 -H 'Content-Type: application/octet-stream' --data-binary @"$REQUEST_32" -o "$RESPONSE_32" -w '%{http_code}' "http://$ISTIO_GATEWAY_IP/upload"); echo "STATUS_32=$STATUS_32"; cat "$RESPONSE_32"; jq -r '.received_bytes' "$RESPONSE_32"; rm -f "$REQUEST_32" "$RESPONSE_32"`로 상태 코드와 응답 파일을 함께 확인합니다 | `/upload` 응답 JSON에 `received_bytes=32768`이 찍힐 때까지 경로·Gateway IP·EnvoyFilter 적용 상태를 다시 점검한 뒤 재시도합니다 |
-| 33 KiB 요청이 `413`으로 거부되지 않음 | 요청 본문 제한이 아직 적용되지 않았거나 다른 Gateway Pod로 요청이 분산됨 | `REQUEST_33=.body-limit-33.bin; RESPONSE_33=.body-limit-33.txt; head -c $((33 * 1024)) /dev/zero > "$REQUEST_33"; STATUS_33=$(curl -sS --max-time 15 -H 'Content-Type: application/octet-stream' --data-binary @"$REQUEST_33" -o "$RESPONSE_33" -w '%{http_code}' "http://$ISTIO_GATEWAY_IP/upload"); echo "STATUS_33=$STATUS_33"; cat "$RESPONSE_33"; rm -f "$REQUEST_33" "$RESPONSE_33"`와 `kubectl exec -n "$APP_NAMESPACE" "$GATEWAY_POD" -c istio-proxy -- pilot-agent request GET config_dump \| grep -n 'max_request_bytes'`로 HTTP 상태와 Gateway config를 함께 확인합니다 | 모든 Running Gateway Pod에서 `max_request_bytes: 32768`이 확인된 뒤 다시 33 KiB 요청을 보내고, 계속 `413`이 아니면 selector와 EnvoyFilter 매니페스트를 다시 검토합니다 |
+| `EnvoyFilter`는 존재하지만 하나 이상 Gateway Pod의 config dump에서 `max_request_bytes: 131072`가 보이지 않음 | EnvoyFilter 전파가 아직 끝나지 않았거나 selector가 일부 Pod를 놓침 (`envoy.filters.http.buffer`라는 필터 이름은 EnvoyFilter 적용 여부와 무관하게 Envoy 내장 확장 레지스트리에 항상 나타나므로 진단 신호로 쓰지 않습니다) | `kubectl get envoyfilter istio-session-body-limit -n "$APP_NAMESPACE" -o yaml`, `kubectl get pods -n "$APP_NAMESPACE" -l gateway.networking.k8s.io/gateway-name=istio-session-gateway --field-selector=status.phase=Running -o name`, 그리고 `kubectl exec -n "$APP_NAMESPACE" "$GATEWAY_POD" -c istio-proxy -- pilot-agent request GET config_dump \| grep -n -E 'max_request_bytes[^0-9]+131072'`로 리소스와 각 Pod의 config dump를 확인합니다 | `ENVOY_FILTER_READY=true`가 될 때까지 2–3초 간격으로 다시 확인하고, 특정 Pod만 계속 누락되면 해당 Pod를 재시작한 뒤 config dump를 다시 확인합니다 |
+| 128 KiB 요청이 `200`이 아니거나 `received_bytes=131072`가 아님 | EnvoyFilter가 너무 일찍 차단했거나, 요청이 `/upload`가 아닌 다른 경로로 갔거나, 응답 JSON을 제대로 읽지 못함 | `REQUEST_128=.body-limit-128.bin; RESPONSE_128=.body-limit-128.json; head -c $((128 * 1024)) /dev/zero > "$REQUEST_128"; STATUS_128=$(curl -sS --max-time 15 -H 'Content-Type: application/octet-stream' --data-binary @"$REQUEST_128" -o "$RESPONSE_128" -w '%{http_code}' "http://$ISTIO_GATEWAY_IP/upload"); echo "STATUS_128=$STATUS_128"; cat "$RESPONSE_128"; jq -r '.received_bytes' "$RESPONSE_128"; rm -f "$REQUEST_128" "$RESPONSE_128"`로 상태 코드와 응답 파일을 함께 확인합니다 | `/upload` 응답 JSON에 `received_bytes=131072`가 찍힐 때까지 경로·Gateway IP·EnvoyFilter 적용 상태를 다시 점검한 뒤 재시도합니다 |
+| 129 KiB 요청이 `413`으로 거부되지 않음 | 요청 본문 제한이 아직 적용되지 않았거나 다른 Gateway Pod로 요청이 분산됨 | `REQUEST_129=.body-limit-129.bin; RESPONSE_129=.body-limit-129.txt; head -c $((129 * 1024)) /dev/zero > "$REQUEST_129"; STATUS_129=$(curl -sS --max-time 15 -H 'Content-Type: application/octet-stream' --data-binary @"$REQUEST_129" -o "$RESPONSE_129" -w '%{http_code}' "http://$ISTIO_GATEWAY_IP/upload"); echo "STATUS_129=$STATUS_129"; cat "$RESPONSE_129"; rm -f "$REQUEST_129" "$RESPONSE_129"`와 `kubectl exec -n "$APP_NAMESPACE" "$GATEWAY_POD" -c istio-proxy -- pilot-agent request GET config_dump \| grep -n -E 'max_request_bytes[^0-9]+131072'`로 HTTP 상태와 Gateway config를 함께 확인합니다 | 모든 Running Gateway Pod에서 `max_request_bytes: 131072`가 확인된 뒤 다시 129 KiB 요청을 보내고, 계속 `413`이 아니면 selector와 EnvoyFilter 매니페스트를 다시 검토합니다 |
 
 ---
 
