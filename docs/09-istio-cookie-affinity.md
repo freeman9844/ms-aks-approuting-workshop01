@@ -55,6 +55,7 @@ flowchart LR
 
 🟢 **실행**
 ```bash
+# 저장소를 최신 상태로 준비합니다.
 cd ~
 if [ -d ms-aks-approuting-workshop01/.git ]; then
   cd ms-aks-approuting-workshop01
@@ -63,12 +64,15 @@ else
   git clone https://github.com/jungwoonlee_microsoft/ms-aks-approuting-workshop01.git
   cd ms-aks-approuting-workshop01
 fi
+# 이전 모듈에서 저장한 공통 환경 변수를 복원합니다.
 source ~/.approuting-ws-env
+# 원래 Application Routing 클러스터의 자격 증명과 context를 복원합니다.
 az aks get-credentials \
   --resource-group "$RESOURCE_GROUP" \
   --name "$CLUSTER" \
   --overwrite-existing
 export ORIGINAL_CONTEXT=$(kubectl config current-context)
+# 별도 Istio 클러스터 이름과 원래 클러스터의 기준 상태를 기록합니다.
 export ISTIO_CLUSTER="aks-istio-$SUFFIX"
 export ORIGINAL_APP_ROUTING_MODE=$(az aks show \
   --resource-group "$RESOURCE_GROUP" \
@@ -79,10 +83,12 @@ echo "RESOURCE_GROUP=$RESOURCE_GROUP  LOCATION=$LOCATION"
 echo "ORIGINAL_CLUSTER=$CLUSTER  ORIGINAL_CONTEXT=$ORIGINAL_CONTEXT"
 echo "ISTIO_CLUSTER=$ISTIO_CLUSTER  APP_NAMESPACE=$APP_NAMESPACE"
 echo "ORIGINAL_APP_ROUTING_MODE=$ORIGINAL_APP_ROUTING_MODE"
+# 원래 클러스터의 Application Routing 설정이 실습 전제와 같은지 확인합니다.
 [ "$ORIGINAL_APP_ROUTING_MODE" = "Enabled" ] || {
   echo "기존 클러스터의 Application Routing Istio가 Enabled 상태가 아닙니다."
   exit 1
 }
+# 원래 클러스터의 GatewayClass와 Gateway 목록을 기준값으로 확인합니다.
 kubectl get gatewayclass approuting-istio
 kubectl get gateway -A
 ```
@@ -112,12 +118,14 @@ No resources found
 
 🟢 **실행**
 ```bash
+# 같은 이름의 호환 클러스터가 있으면 재사용하고, 없으면 새로 만듭니다.
 if az aks show \
   --resource-group "$RESOURCE_GROUP" \
   --name "$ISTIO_CLUSTER" \
   -o none 2>/dev/null; then
   echo "기존 Istio 옵션 클러스터를 재사용합니다: $ISTIO_CLUSTER"
 else
+  # 지역 기본 AKS 버전과 호환되는 최신 Istio revision을 선택합니다.
   export ISTIO_K8S_VERSION=$(az aks get-versions \
     --location "$LOCATION" \
     --query "values[?isDefault].version | [0]" \
@@ -128,12 +136,14 @@ else
     --query "meshRevisions[?compatibleWith[?name=='KubernetesOfficial' && contains(versions, '$ISTIO_MINOR')]].revision | [-1]" \
     -o tsv)
   echo "ISTIO_K8S_VERSION=$ISTIO_K8S_VERSION  REVISION=$REVISION"
+  # Gateway API를 지원하는 asm-1-26 이상인지 생성 전에 검사합니다.
   [ -n "$ISTIO_K8S_VERSION" ] && [[ "$REVISION" =~ ^asm-1-([0-9]+)$ ]] \
     && [ "${BASH_REMATCH[1]}" -ge 26 ] || {
     echo "Korea Central 기본 AKS 버전과 호환되는 asm-1-26 이상 revision을 찾지 못했습니다."
     exit 1
   }
 
+  # Gateway API와 AKS Istio add-on을 한 번의 클러스터 생성에 활성화합니다.
   az aks create \
     --resource-group "$RESOURCE_GROUP" \
     --name "$ISTIO_CLUSTER" \
@@ -147,6 +157,7 @@ else
     --generate-ssh-keys
 fi
 
+# 재사용 여부와 관계없이 실제 클러스터 버전과 revision을 다시 읽습니다.
 export ISTIO_K8S_VERSION=$(az aks show \
   --resource-group "$RESOURCE_GROUP" \
   --name "$ISTIO_CLUSTER" \
@@ -164,6 +175,7 @@ echo "EFFECTIVE_K8S_VERSION=$ISTIO_K8S_VERSION  EFFECTIVE_REVISION=$REVISION"
 
 🟢 **실행**
 ```bash
+# 새 터미널에서도 재사용하도록 기존 값을 제거한 뒤 현재 값을 저장합니다.
 sed -i \
   -e '/^export ISTIO_CLUSTER=/d' \
   -e '/^export ISTIO_K8S_VERSION=/d' \
@@ -190,17 +202,20 @@ EFFECTIVE_K8S_VERSION=1.35  EFFECTIVE_REVISION=asm-1-30
 
 🟢 **실행**
 ```bash
+# 별도 Istio 클러스터의 자격 증명을 독립된 context 이름으로 가져옵니다.
 az aks get-credentials \
   --resource-group "$RESOURCE_GROUP" \
   --name "$ISTIO_CLUSTER" \
   --context "$ISTIO_CLUSTER" \
   --overwrite-existing
 kubectl config use-context "$ISTIO_CLUSTER"
+# AKS control plane 설정에서 Istio add-on 활성 상태를 확인합니다.
 [ "$(az aks show -g "$RESOURCE_GROUP" -n "$ISTIO_CLUSTER" \
   --query 'serviceMeshProfile.mode' -o tsv)" = "Istio" ] || {
   echo "두 번째 클러스터의 Istio service mesh add-on이 활성화되지 않았습니다."
   exit 1
 }
+# GatewayClass가 요청을 수락하고 필요한 CRD가 설치될 때까지 확인합니다.
 kubectl wait \
   --for=condition=Accepted=True \
   gatewayclass/istio \
@@ -209,6 +224,7 @@ kubectl get crd \
   gateways.gateway.networking.k8s.io \
   httproutes.gateway.networking.k8s.io \
   destinationrules.networking.istio.io
+# 선택한 revision의 istiod가 실제로 Running 상태인지 계산합니다.
 export REVISION_ISTIOD_RUNNING=$(kubectl get pods \
   -n aks-istio-system \
   -l app=istiod \
@@ -219,10 +235,12 @@ echo "REVISION_ISTIOD_RUNNING=$REVISION_ISTIOD_RUNNING"
   echo "요청 revision의 Running istiod 파드를 찾지 못했습니다."
   exit 1
 }
+# 네임스페이스를 idempotent하게 만들고 자동 sidecar injection 라벨을 제거합니다.
 kubectl create namespace "$APP_NAMESPACE" \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace "$APP_NAMESPACE" istio.io/rev- 2>/dev/null || true
 kubectl label namespace "$APP_NAMESPACE" istio-injection- 2>/dev/null || true
+# 최종 control plane과 네임스페이스 상태를 사람이 읽을 수 있게 출력합니다.
 kubectl get gatewayclass istio
 kubectl get pods -n aks-istio-system
 kubectl get namespace "$APP_NAMESPACE" --show-labels
@@ -273,12 +291,15 @@ data:
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from urllib.parse import parse_qs, urlparse
 
+    # Istio가 선택한 Pod를 응답에 표시해 동일 쿠키의 라우팅 결과를 비교합니다.
     POD_NAME = os.environ["POD_NAME"]
+    # 큰 응답 시험을 재현 가능한 세 가지 크기로 제한합니다.
     ALLOWED_SIZE_KIB = {8, 16, 32}
 
 
     class Handler(BaseHTTPRequestHandler):
         def send_json(self, status, payload, large_header_bytes=0):
+            # 모든 JSON 응답에 Pod 이름을 넣고 필요할 때 큰 헤더를 추가합니다.
             body = json.dumps(payload, separators=(",", ":")).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
@@ -290,6 +311,7 @@ data:
             self.wfile.write(body)
 
         def send_bytes(self, status, body):
+            # 큰 본문 시험은 실제 byte 길이를 Content-Length와 함께 반환합니다.
             self.send_response(status)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Length", str(len(body)))
@@ -311,12 +333,14 @@ data:
 
         def do_GET(self):
             request = urlparse(self.path)
+            # /healthz는 Probe에, /identity는 cookie affinity 확인에 사용합니다.
             if request.path == "/healthz":
                 self.send_json(200, {"status": "ok", "pod": POD_NAME})
                 return
             if request.path == "/identity":
                 self.send_json(200, {"pod": POD_NAME})
                 return
+            # /headers와 /body는 NGINX buffer annotation 없이 큰 응답을 시험합니다.
             if request.path == "/headers":
                 size_kib = self.parse_size_kib(request)
                 if size_kib is None:
@@ -364,6 +388,7 @@ spec:
         fsGroup: 1000
       containers:
       - name: app
+        # 범용 Python 이미지가 ConfigMap의 코드를 실행하므로 이미지 빌드가 필요 없습니다.
         image: python:3.12-alpine
         command: ["python", "/app/server.py"]
         env:
@@ -375,18 +400,21 @@ spec:
         ports:
         - name: http
           containerPort: 8080
+        # 준비된 Pod만 Service 엔드포인트에 포함합니다.
         readinessProbe:
           httpGet:
             path: /healthz
             port: http
           initialDelaySeconds: 2
           periodSeconds: 3
+        # 테스트 서버가 응답하지 않으면 컨테이너를 다시 시작합니다.
         livenessProbe:
           httpGet:
             path: /healthz
             port: http
           initialDelaySeconds: 5
           periodSeconds: 10
+        # 워크샵 노드에서 두 Pod를 가볍게 실행하도록 자원을 제한합니다.
         resources:
           requests:
             cpu: 20m
@@ -394,6 +422,7 @@ spec:
           limits:
             cpu: 100m
             memory: 64Mi
+        # 애플리케이션 컨테이너의 권한 상승과 Linux capability를 차단합니다.
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -414,10 +443,12 @@ kind: Service
 metadata:
   name: istio-session-test
 spec:
+  # 두 Pod의 공통 app label을 선택해 하나의 백엔드로 노출합니다.
   selector:
     app: istio-session-test
   ports:
   - name: http
+    # Service 80 포트를 컨테이너의 이름 있는 http 포트(8080)로 전달합니다.
     port: 80
     targetPort: http
 ```
@@ -437,9 +468,11 @@ spec:
 
 🟢 **실행**
 ```bash
+# ConfigMap, Deployment, Service를 같은 네임스페이스에 적용합니다.
 kubectl apply \
   -n "$APP_NAMESPACE" \
   -f manifests/istio-session-test-app.yaml
+# 두 테스트 Pod가 준비될 때까지 기다린 뒤 실제 Ready 수를 확인합니다.
 kubectl rollout status deployment/istio-session-test \
   -n "$APP_NAMESPACE" \
   --timeout=300s
@@ -469,10 +502,12 @@ istio-session-test-8649fc85c6-92pbm   1/1     Running   0          12s
 
 👁️ **예시** — `manifests/istio-session-test-routing.yaml` 전체
 ```yaml
+# AKS Istio add-on이 관리하는 Gateway API 진입점을 만듭니다.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: istio-session-gateway
+  # 여러 Istio revision이 공존해도 선택한 control plane이 Gateway를 관리합니다.
   labels:
     istio.io/rev: ${REVISION}
 spec:
@@ -481,15 +516,18 @@ spec:
   - name: http
     port: 80
     protocol: HTTP
+    # 다른 네임스페이스의 Route가 이 Gateway에 연결되지 않도록 제한합니다.
     allowedRoutes:
       namespaces:
         from: Same
 ---
+# 모든 HTTP 경로를 테스트 Service의 80 포트로 전달합니다.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: istio-session-test
 spec:
+  # 위에서 만든 Gateway에 이 Route를 연결합니다.
   parentRefs:
   - name: istio-session-gateway
   rules:
@@ -501,18 +539,22 @@ spec:
     - name: istio-session-test
       port: 80
 ---
+# 테스트 Service에 cookie 기반 consistent hash 정책을 적용합니다.
 apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: istio-session-test
 spec:
+  # 같은 네임스페이스의 Service DNS 이름입니다.
   host: istio-session-test
   trafficPolicy:
     loadBalancer:
       consistentHash:
         httpCookie:
+          # 첫 응답에서 발급된 쿠키 값을 이후 endpoint 선택 키로 재사용합니다.
           name: workshop-session
           path: /
+          # 만료 시각이 없는 브라우저 세션 쿠키로 발급합니다.
           ttl: 0s
 ```
 
@@ -531,18 +573,22 @@ spec:
 
 🟢 **실행**
 ```bash
+# ${REVISION}을 현재 값으로 치환해 세 라우팅 리소스를 적용합니다.
 envsubst < manifests/istio-session-test-routing.yaml |
   kubectl apply -n "$APP_NAMESPACE" -f -
+# Gateway가 외부 트래픽을 받을 수 있는 상태가 될 때까지 기다립니다.
 kubectl wait \
   --for=condition=Programmed=True \
   gateway/istio-session-gateway \
   -n "$APP_NAMESPACE" \
   --timeout=300s
+# 생성된 리소스와 HTTPRoute의 Accepted/ResolvedRefs 조건을 확인합니다.
 kubectl get gateway,httproute,destinationrule \
   -n "$APP_NAMESPACE"
 kubectl get httproute istio-session-test \
   -n "$APP_NAMESPACE" \
   -o jsonpath='{range .status.parents[0].conditions[*]}{.type}={.status}{"\n"}{end}'
+# 이후 curl 요청에서 사용할 Gateway 공인 IP를 저장합니다.
 export ISTIO_GATEWAY_IP=$(kubectl get gateway istio-session-gateway \
   -n "$APP_NAMESPACE" \
   -o jsonpath='{.status.addresses[0].value}')
@@ -581,13 +627,16 @@ ISTIO_GATEWAY_IP=20.249.51.44
 
 🟢 **실행**
 ```bash
+# 첫 요청의 쿠키, 응답 헤더, 본문을 서로 다른 임시 파일에 저장합니다.
 export COOKIE_JAR=$(mktemp)
 export RESPONSE_HEADERS=$(mktemp)
 export RESPONSE_BODY=$(mktemp)
 curl -sS -D "$RESPONSE_HEADERS" -c "$COOKIE_JAR" \
   "http://$ISTIO_GATEWAY_IP/identity" -o "$RESPONSE_BODY"
+# Set-Cookie 발급과 첫 요청을 처리한 Pod를 확인합니다.
 grep -i '^set-cookie: workshop-session=' "$RESPONSE_HEADERS"
 cat "$RESPONSE_BODY"; echo
+# 같은 cookie jar를 다섯 번 재사용해 선택된 Pod가 유지되는지 봅니다.
 for i in $(seq 1 5); do
   curl -sS -b "$COOKIE_JAR" "http://$ISTIO_GATEWAY_IP/identity" |
     jq -r .pod
@@ -617,6 +666,7 @@ istio-session-test-8649fc85c6-92pbm
 
 🟢 **실행**
 ```bash
+# 요청마다 별도 cookie jar를 사용해 20개의 독립 세션을 만듭니다.
 export COOKIE_DIR=$(mktemp -d)
 for i in $(seq 1 20); do
   curl -sS -c "$COOKIE_DIR/session-$i.txt" \
@@ -635,6 +685,7 @@ done | sort | uniq -c
 
 🟢 **실행**
 ```bash
+# Service가 실제로 두 개의 준비된 Pod endpoint를 갖는지 확인합니다.
 kubectl get endpointslice -n "$APP_NAMESPACE" \
   -l kubernetes.io/service-name=istio-session-test
 ```
@@ -643,14 +694,17 @@ kubectl get endpointslice -n "$APP_NAMESPACE" \
 
 🟢 **실행**
 ```bash
+# 기존 cookie jar가 현재 선택하는 Pod 이름을 안전하게 추출합니다.
 export STICKY_POD=$(curl -fsS --max-time 5 -b "$COOKIE_JAR" \
   "http://$ISTIO_GATEWAY_IP/identity" |
   jq -er '.pod | select(type == "string" and length > 0)') || {
   echo "삭제할 sticky 파드 이름을 확인하지 못했습니다."
   exit 1
 }
+# sticky 대상 Pod를 삭제해 endpoint 집합 변경을 발생시킵니다.
 kubectl delete pod "$STICKY_POD" -n "$APP_NAMESPACE"
 export REMAPPED_POD=""
+# 같은 쿠키로 최대 60초 동안 새 Pod가 선택될 때까지 재시도합니다.
 for ATTEMPT in $(seq 1 30); do
   REMAPPED_POD=$(curl -fsS --max-time 5 -b "$COOKIE_JAR" \
     "http://$ISTIO_GATEWAY_IP/identity" 2>/dev/null |
@@ -661,6 +715,7 @@ for ATTEMPT in $(seq 1 30); do
   sleep 2
 done
 echo "before=$STICKY_POD  after=$REMAPPED_POD"
+# 비어 있지 않은 다른 Pod가 선택되지 않으면 실험을 실패로 처리합니다.
 [ -n "$REMAPPED_POD" ] && [ "$STICKY_POD" != "$REMAPPED_POD" ] || {
   echo "60초 안에 정상 파드로 재매핑되지 않았습니다."
   exit 1
@@ -695,6 +750,7 @@ NGINX에서 사용하던 세 설정의 역할은 서로 다릅니다.
 
 🟢 **실행**
 ```bash
+# 세 응답 크기를 순회하며 상태 코드, 헤더 길이, 처리 Pod를 기록합니다.
 for SIZE in 8 16 32; do
   HEADER_FILE=$(mktemp)
   BODY_FILE=$(mktemp)
@@ -703,6 +759,7 @@ for SIZE in 8 16 32; do
     -o "$BODY_FILE" \
     -w '%{http_code}' \
     "http://$ISTIO_GATEWAY_IP/headers?size=$SIZE")
+  # X-Workshop-Large-Header의 값만 추출해 실제 byte 수를 계산합니다.
   HEADER_BYTES=$(LC_ALL=C awk '
     BEGIN { IGNORECASE=1 }
     /^X-Workshop-Large-Header:/ {
@@ -710,6 +767,7 @@ for SIZE in 8 16 32; do
       sub(/^[^:]*: /, "")
       print length($0)
     }' "$HEADER_FILE")
+  # 응답 헤더에서 요청을 처리한 Pod 이름을 추출합니다.
   POD=$(LC_ALL=C awk '
     BEGIN { IGNORECASE=1 }
     /^X-Workshop-Pod:/ {
@@ -719,6 +777,7 @@ for SIZE in 8 16 32; do
     }' "$HEADER_FILE")
   printf '%s KiB: status=%s header_bytes=%s pod=%s\n' \
     "$SIZE" "$HTTP_CODE" "$HEADER_BYTES" "$POD"
+  # 각 반복에서 생성한 임시 응답 파일을 삭제합니다.
   rm -f "$HEADER_FILE" "$BODY_FILE"
 done
 ```
@@ -736,6 +795,7 @@ done
 
 🟢 **실행**
 ```bash
+# 세 응답 크기를 순회하며 상태 코드, 본문 길이, 처리 Pod를 기록합니다.
 for SIZE in 8 16 32; do
   HEADER_FILE=$(mktemp)
   BODY_FILE=$(mktemp)
@@ -744,7 +804,9 @@ for SIZE in 8 16 32; do
     -o "$BODY_FILE" \
     -w '%{http_code}' \
     "http://$ISTIO_GATEWAY_IP/body?size=$SIZE")
+  # 저장된 본문 파일의 정확한 byte 수를 계산합니다.
   BODY_BYTES=$(wc -c < "$BODY_FILE" | tr -d ' ')
+  # 응답 헤더에서 요청을 처리한 Pod 이름을 추출합니다.
   POD=$(LC_ALL=C awk '
     BEGIN { IGNORECASE=1 }
     /^X-Workshop-Pod:/ {
@@ -756,6 +818,7 @@ for SIZE in 8 16 32; do
     "$SIZE" "$HTTP_CODE" "$BODY_BYTES" "$POD"
   rm -f "$HEADER_FILE" "$BODY_FILE"
 done
+# 모듈 5–7에서 만든 임시 파일과 디렉터리를 정리합니다.
 rm -f "$COOKIE_JAR" "$RESPONSE_HEADERS" "$RESPONSE_BODY"
 rm -rf "$COOKIE_DIR"
 ```
@@ -789,6 +852,7 @@ rm -rf "$COOKIE_DIR"
 
 🟢 **실행**
 ```bash
+# Pending Pod와 최신 스케줄링 이벤트를 함께 확인합니다.
 kubectl get pods -A --field-selector=status.phase=Pending
 kubectl get events -A --sort-by=.lastTimestamp | tail -30
 ```
@@ -797,10 +861,12 @@ kubectl get events -A --sort-by=.lastTimestamp | tail -30
 
 🟢 **실행**
 ```bash
+# CPU 부족이 확인된 경우에만 별도 Istio 클러스터를 3노드로 확장합니다.
 az aks scale \
   --resource-group "$RESOURCE_GROUP" \
   --name "$ISTIO_CLUSTER" \
   --node-count 3
+# 확장 후 Gateway가 다시 Programmed 상태인지 확인합니다.
 kubectl wait \
   --for=condition=Programmed=True \
   gateway/istio-session-gateway \
@@ -816,7 +882,9 @@ kubectl wait \
 
 🟢 **실행**
 ```bash
+# kubectl을 실습 시작 시 저장한 원래 클러스터 context로 되돌립니다.
 kubectl config use-context "$ORIGINAL_CONTEXT"
+# 원래 클러스터의 Application Routing mode를 다시 읽어 기준값과 비교합니다.
 export FINAL_APP_ROUTING_MODE=$(az aks show \
   --resource-group "$RESOURCE_GROUP" \
   --name "$CLUSTER" \
@@ -827,6 +895,7 @@ echo "BEFORE=$ORIGINAL_APP_ROUTING_MODE  AFTER=$FINAL_APP_ROUTING_MODE"
   echo "기존 클러스터의 Application Routing 상태가 달라졌습니다."
   exit 1
 }
+# GatewayClass, Gateway 목록, current-context를 최종 기준 상태와 비교합니다.
 kubectl get gatewayclass approuting-istio
 kubectl get gateway -A
 kubectl config current-context

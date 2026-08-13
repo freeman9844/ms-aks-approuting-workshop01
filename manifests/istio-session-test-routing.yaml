@@ -1,7 +1,9 @@
+# AKS Istio add-on이 관리하는 Gateway API 진입점을 만듭니다.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: istio-session-gateway
+  # 여러 Istio revision이 공존해도 선택한 control plane이 Gateway를 관리합니다.
   labels:
     istio.io/rev: ${REVISION}
 spec:
@@ -10,15 +12,18 @@ spec:
   - name: http
     port: 80
     protocol: HTTP
+    # 다른 네임스페이스의 Route가 이 Gateway에 연결되지 않도록 제한합니다.
     allowedRoutes:
       namespaces:
         from: Same
 ---
+# 모든 HTTP 경로를 테스트 Service의 80 포트로 전달합니다.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: istio-session-test
 spec:
+  # 위에서 만든 Gateway에 이 Route를 연결합니다.
   parentRefs:
   - name: istio-session-gateway
   rules:
@@ -30,16 +35,20 @@ spec:
     - name: istio-session-test
       port: 80
 ---
+# 테스트 Service에 cookie 기반 consistent hash 정책을 적용합니다.
 apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: istio-session-test
 spec:
+  # 같은 네임스페이스의 Service DNS 이름입니다.
   host: istio-session-test
   trafficPolicy:
     loadBalancer:
       consistentHash:
         httpCookie:
+          # 첫 응답에서 발급된 쿠키 값을 이후 endpoint 선택 키로 재사용합니다.
           name: workshop-session
           path: /
+          # 만료 시각이 없는 브라우저 세션 쿠키로 발급합니다.
           ttl: 0s
