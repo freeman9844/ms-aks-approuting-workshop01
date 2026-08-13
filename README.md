@@ -51,7 +51,7 @@ flowchart LR
 6. (옵션) 자동 생성되는 Gateway 인프라(Service·Deployment·HPA·PDB)를 ConfigMap으로 재정의하고, Annotation으로 내부 Load Balancer 전환을 수행한다.
 7. (옵션) Azure Front Door에서 TLS offloading을 구성하고, ingress-nginx와 Gateway API 데이터 플레인을 병렬 구성해 가중치 카나리 마이그레이션을 수행한다.
 8. Gateway annotation이 generated Service에 전달되는지와 Private Link Service/Private Endpoint 연결을 검증한다.
-9. (옵션) 같은 리소스 그룹에 Istio 전용 AKS 클러스터를 추가하고, `DestinationRule` 쿠키 consistent hash·`EnvoyFilter` 128 KiB 요청 본문 제한(128 KiB 허용·129 KiB는 `413`)·8/16/32 KiB 응답 헤더·본문을 관찰한다.
+9. (옵션) 같은 리소스 그룹에 Istio 전용 AKS 클러스터를 추가하고, `DestinationRule` 쿠키 consistent hash와 8/16/32 KiB 응답 헤더·본문을 관찰한다. (추가 옵션: `EnvoyFilter` 128 KiB 요청 본문 제한)
 10. 실습에 사용한 모든 Azure 리소스를 완전히 정리한다.
 
 ---
@@ -79,14 +79,14 @@ flowchart LR
 | 06 | [Gateway 인프라 커스터마이징 (옵션)](docs/06-gateway-customizations.md) | ConfigMap으로 HPA·Deployment 재정의, Annotation으로 내부 LB 전환 |
 | 07 | [AFD 카나리 마이그레이션 (옵션)](docs/07-afd-canary-migration.md) | AFD TLS offloading, ingress-nginx ∥ Gateway API 병렬 구성, 가중치 카나리로 무중단 이관 |
 | 08 | [Gateway API Private Link Service 검증 (옵션)](docs/08-private-link-service.md) | Gateway annotation 전달과 Private Endpoint/ACI로 private data path 확인 |
-| 09 | [Istio Gateway API 쿠키 일관 해시·응답 헤더·본문 검증 (옵션)](docs/09-istio-cookie-affinity.md) | 별도 Istio AKS 생성, DestinationRule 쿠키 일관 해시, EnvoyFilter 128 KiB 요청 본문 제한(128 KiB 허용·129 KiB `413`), 8/16/32 KiB 응답 헤더·본문 관찰 |
+| 09 | [Istio Gateway API 쿠키 일관 해시·응답 헤더·본문 검증 (옵션)](docs/09-istio-cookie-affinity.md) | 별도 Istio AKS 생성, DestinationRule 쿠키 일관 해시, 8/16/32 KiB 응답 헤더·본문 관찰 (추가 옵션: EnvoyFilter 128 KiB 요청 본문 제한) |
 | 10 | [정리](docs/10-cleanup.md) | 전체 Azure 리소스 삭제 |
 
 07과 08은 기존 Application Routing Gateway 상태를 변경하는 옵션입니다. 09는 별도 클러스터를 사용하므로 02 이후 독립적으로 수행할 수 있으며, 07·08 전후에도 실행할 수 있습니다.
 
 09 옵션의 2026-08-13 Korea Central 검증에서는 큰 응답 헤더가 `8/16/32 KiB → 200 / 8192·16384·32768 bytes`, 큰 응답 본문이 `8/16/32 KiB → 200 / 8192·16384·32768 bytes`로 관찰됐습니다. 다만 이 고정 크기 본문 시험만으로 streaming 또는 busy-buffer semantics 전체가 증명되는 것은 아닙니다.
 
-같은 검증에서 EnvoyFilter 128 KiB 요청 본문 제한도 확인했습니다. 128 KiB: status=200 received_bytes=131072, 129 KiB: status=413으로, 선택된 두 Gateway Pod 모두에 필터가 32초 만에 전파됐습니다.
+같은 검증에서 8절 옵션인 EnvoyFilter 128 KiB 요청 본문 제한도 확인했습니다. 128 KiB: status=200 received_bytes=131072, 129 KiB: status=413으로, 선택된 두 Gateway Pod 모두에 필터가 32초 만에 전파됐습니다.
 
 ---
 
@@ -102,9 +102,9 @@ flowchart LR
 | 06 | Gateway 인프라 커스터마이징 (옵션) | 10–15분 | HPA 반영·내부 LB 재구성 대기 |
 | 07 | AFD 카나리 마이그레이션 (옵션) | 50–90분 | AFD 라우트·가중치 변경 전파 대기 (회당 5–30분) |
 | 08 | Gateway API Private Link Service 검증 (옵션) | 15–20분 (Private Endpoint 승인·ACI 통신 확인 대기 포함; 2026-08-11 리허설 실측: Gateway 패치→ACI HTTP 200 확인까지 순수 Azure 작업 시간 약 6분) | Private Endpoint 승인·ACI 통신 확인 |
-| 09 | Istio Gateway API 쿠키 일관 해시·응답 헤더·본문 검증 (옵션) | 8–13분 (두 번째 AKS 클러스터 생성과 EnvoyFilter 전파 대기 포함; 2026-08-13 Korea Central 리허설 실측(128 KiB 제한 기준): 전체 약 8분(465초), 두 번째 클러스터 생성 348초, EnvoyFilter 전파 32초) | 두 번째 AKS 클러스터 생성 |
+| 09 | Istio Gateway API 쿠키 일관 해시·응답 헤더·본문 검증 (옵션) | 7–12분 (두 번째 AKS 클러스터 생성 포함, EnvoyFilter 옵션 +1–2분; 2026-08-13 Korea Central 리허설 실측: 옵션 포함 전체 약 8분(465초), 두 번째 클러스터 생성 348초, EnvoyFilter 전파 32초) | 두 번째 AKS 클러스터 생성 |
 | 10 | 정리 | 5–10분 (RG 삭제 완료 대기 포함) | AKS 노드 RG 연쇄 삭제 |
-| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +15–20분, 09 옵션 +8–13분)** | |
+| **합계** | | **≈ 1시간 10분–1시간 30분 (06 옵션 +10–15분, 07 옵션 +50–90분 또는 08 옵션 +15–20분, 09 옵션 +7–12분, 09의 EnvoyFilter 추가 옵션 +1–2분)** | |
 
 ---
 
